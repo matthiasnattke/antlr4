@@ -1,32 +1,6 @@
-﻿/*
- * [The "BSD license"]
- *  Copyright (c) 2016 Mike Lischke
- *  Copyright (c) 2013 Terence Parr
- *  Copyright (c) 2013 Dan McLaughlin
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *  1. Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- *  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- *  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- *  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+﻿/* Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+ * Use of this file is governed by the BSD 3-clause license that
+ * can be found in the LICENSE.txt file in the project root.
  */
 
 #include "misc/MurmurHash.h"
@@ -39,70 +13,55 @@
 using namespace antlr4;
 using namespace antlr4::misc;
 
-IntervalSet const IntervalSet::COMPLETE_CHAR_SET = []() {
-  IntervalSet complete = IntervalSet::of(Lexer::MIN_CHAR_VALUE, Lexer::MAX_CHAR_VALUE);
-  complete.setReadOnly(true);
-  return complete;
-}();
+IntervalSet const IntervalSet::COMPLETE_CHAR_SET = 
+    IntervalSet::of(Lexer::MIN_CHAR_VALUE, Lexer::MAX_CHAR_VALUE);
 
-IntervalSet const IntervalSet::EMPTY_SET = []() {
-  IntervalSet empty;
-  empty.setReadOnly(true);
-  return empty;
-}();
+IntervalSet const IntervalSet::EMPTY_SET;
 
-IntervalSet::IntervalSet() {
-  InitializeInstanceFields();
-}
-
-IntervalSet::IntervalSet(const std::vector<Interval> &intervals) : IntervalSet() {
-  _intervals = intervals;
+IntervalSet::IntervalSet() : _intervals() {
 }
 
 IntervalSet::IntervalSet(const IntervalSet &set) : IntervalSet() {
-  addAll(set);
+  _intervals = set._intervals;
 }
 
-IntervalSet::IntervalSet(int n, ...) : IntervalSet() {
-  va_list vlist;
-  va_start(vlist, n);
+IntervalSet::IntervalSet(IntervalSet&& set) : IntervalSet(std::move(set._intervals)) {
+}
 
-  for (int i = 0; i < n; i++) {
-    add(va_arg(vlist, int));
-  }
+IntervalSet::IntervalSet(std::vector<Interval>&& intervals) : _intervals(std::move(intervals)) {
+}
+
+IntervalSet& IntervalSet::operator=(const IntervalSet& other) {
+  _intervals = other._intervals;
+  return *this;
+}
+
+IntervalSet& IntervalSet::operator=(IntervalSet&& other) {
+  _intervals = move(other._intervals);
+  return *this;
 }
 
 IntervalSet IntervalSet::of(ssize_t a) {
   return IntervalSet({ Interval(a, a) });
 }
 
-IntervalSet IntervalSet::of(ssize_t a, ssize_t b, bool autoExtend) {
-  return IntervalSet({ Interval(a, b, autoExtend) });
+IntervalSet IntervalSet::of(ssize_t a, ssize_t b) {
+  return IntervalSet({ Interval(a, b) });
 }
 
 void IntervalSet::clear() {
-  if (_readonly) {
-    throw IllegalStateException("can't alter read only IntervalSet");
-  }
   _intervals.clear();
 }
 
 void IntervalSet::add(ssize_t el) {
-  if (_readonly) {
-    throw IllegalStateException("can't alter read only IntervalSet");
-  }
   add(el, el);
 }
 
-void IntervalSet::add(ssize_t a, ssize_t b, bool autoExtend) {
-  add(Interval(a, b, autoExtend));
+void IntervalSet::add(ssize_t a, ssize_t b) {
+  add(Interval(a, b));
 }
 
 void IntervalSet::add(const Interval &addition) {
-  if (_readonly) {
-    throw IllegalStateException("can't alter read only IntervalSet");
-  }
-
   if (addition.b < addition.a) {
     return;
   }
@@ -161,7 +120,7 @@ IntervalSet IntervalSet::Or(const std::vector<IntervalSet> &sets) {
 
 IntervalSet& IntervalSet::addAll(const IntervalSet &set) {
   // walk set and add each interval
-  for (auto &interval : set._intervals) {
+  for (auto const& interval : set._intervals) {
     add(interval);
   }
   return *this;
@@ -350,7 +309,7 @@ ssize_t IntervalSet::getMinElement() const {
   return _intervals[0].a;
 }
 
-std::vector<Interval> IntervalSet::getIntervals() const {
+std::vector<Interval> const& IntervalSet::getIntervals() const {
   return _intervals;
 }
 
@@ -527,10 +486,6 @@ void IntervalSet::remove(size_t el) {
 }
 
 void IntervalSet::remove(ssize_t el) {
-  if (_readonly) {
-    throw IllegalStateException("can't alter read only IntervalSet");
-  }
-
   for (size_t i = 0; i < _intervals.size(); ++i) {
     Interval &interval = _intervals[i];
     ssize_t a = interval.a;
@@ -563,18 +518,4 @@ void IntervalSet::remove(ssize_t el) {
       break; // ml: not in the Java code but I believe we also should stop searching here, as we found x.
     }
   }
-}
-
-bool IntervalSet::isReadOnly() const {
-  return _readonly;
-}
-
-void IntervalSet::setReadOnly(bool readonly) {
-  if (_readonly && !readonly)
-    throw IllegalStateException("Can't alter readonly IntervalSet");
-  _readonly = readonly;
-}
-
-void IntervalSet::InitializeInstanceFields() {
-  _readonly = false;
 }

@@ -1,5 +1,5 @@
 fileHeader(grammarFileName, ANTLRVersion) ::= <<
-// Generated from <grammarFileName; format="java-escape"> by ANTLR <ANTLRVersion>.
+// Code generated from <grammarFileName; format="java-escape"> by ANTLR <ANTLRVersion>. DO NOT EDIT.
 >>
 
 ParserFile(file, parser, namedActions, contextSuperClass) ::= <<
@@ -145,19 +145,13 @@ func (v *Base<file.grammarName>Visitor) Visit<lname; format="cap">(ctx *<lname; 
 >>
 
 Parser(parser, funcs, atn, sempredFuncs, superClass) ::= <<
-<if(superClass)>
-import "./<superClass>"
-
-<endif>
 <if(atn)>
 var parserATN = <atn>
 <else>
 var parserATN []uint16
 <endif>
 
-
 var deserializer = antlr.NewATNDeserializer(nil)
-
 var deserializedATN = deserializer.DeserializeFromUInt16(parserATN)
 
 <if(parser.literalNames)>
@@ -167,7 +161,6 @@ var literalNames = []string{
 <else>
 var literalNames []string
 <endif>
-
 
 <if(parser.symbolicNames)>
 var symbolicNames = []string{
@@ -186,24 +179,24 @@ var ruleNames = []string{
 var ruleNames []string
 <endif>
 
+var decisionToDFA = make([]*antlr.DFA, len(deserializedATN.DecisionToState))
+
+func init() {
+	for index, ds := range deserializedATN.DecisionToState {
+		decisionToDFA[index] = antlr.NewDFA(ds, index)
+	}
+}
 
 type <parser.name> struct {
 	<superClass; null="*antlr.BaseParser">
 }
 
 func New<parser.name>(input antlr.TokenStream) *<parser.name> {
-	var decisionToDFA = make([]*antlr.DFA, len(deserializedATN.DecisionToState))
-	var sharedContextCache = antlr.NewPredictionContextCache()
-
-	for index, ds := range deserializedATN.DecisionToState {
-		decisionToDFA[index] = antlr.NewDFA(ds, index)
-	}
-
 	this := new(<parser.name>)
 
 	this.BaseParser = antlr.NewBaseParser(input)
 
-	this.Interpreter = antlr.NewParserATNSimulator(this, deserializedATN, decisionToDFA, sharedContextCache)
+	this.Interpreter = antlr.NewParserATNSimulator(this, deserializedATN, decisionToDFA, antlr.NewPredictionContextCache())
 	this.RuleNames = ruleNames
 	this.LiteralNames = literalNames
 	this.SymbolicNames = symbolicNames
@@ -406,6 +399,10 @@ func (p *<parser.name>) <currentRule.name; format="cap">(<currentRule.args:{a | 
 		}
 	}()
 
+	<if(currentRule.hasLookaheadBlock)>
+	var _alt int
+	<endif>
+
 	<if(code)>
 	<code>
 
@@ -475,6 +472,10 @@ func (p *<parser.name>) <currentRule.name>(_p int<args:{a | , <a.name> <a.type>}
 			}
 		}
 	}()
+
+	<if(currentRule.hasLookaheadBlock)>
+	var _alt int
+	<endif>
 
 	<if(code)>
 	<code>
@@ -555,9 +556,6 @@ switch p.GetTokenStream().LA(1) {
 
 <endif>
 default:
-	<if(error)>
-	<error>
-	<endif>
 }
 >>
 
@@ -636,10 +634,7 @@ p.GetErrorHandler().Sync(p)
 
 <endif>
 
-
-la_ := p.GetInterpreter().AdaptivePredict(p.GetTokenStream(), <choice.decision>, p.GetParserRuleContext())
-
-switch la_ {
+switch p.GetInterpreter().AdaptivePredict(p.GetTokenStream(), <choice.decision>, p.GetParserRuleContext()) {
 <if(alts)>
 <alts:{alt | case <i>:
 	<alt>}; separator="\n\n">
@@ -650,10 +645,10 @@ switch la_ {
 OptionalBlock(choice, alts, error) ::= <<
 p.SetState(<choice.stateNumber>)
 p.GetErrorHandler().Sync(p)
-la_ := p.GetInterpreter().AdaptivePredict(p.GetTokenStream(), <choice.decision>, p.GetParserRuleContext())
+
 <if(alts)>
 
-<alts:{alt | if la_ == <i><if(!choice.ast.greedy)>+1<endif> {
+<alts:{alt | if p.GetInterpreter().AdaptivePredict(p.GetTokenStream(), <choice.decision>, p.GetParserRuleContext()) == <i><if(!choice.ast.greedy)>+1<endif> {
 	<alt>
 }; separator="} else ">
 <endif>
@@ -663,7 +658,7 @@ la_ := p.GetInterpreter().AdaptivePredict(p.GetTokenStream(), <choice.decision>,
 StarBlock(choice, alts, Sync, iteration) ::= <<
 p.SetState(<choice.stateNumber>)
 p.GetErrorHandler().Sync(p)
-_alt := p.GetInterpreter().AdaptivePredict(p.GetTokenStream(), <choice.decision>, p.GetParserRuleContext())
+_alt = p.GetInterpreter().AdaptivePredict(p.GetTokenStream(), <choice.decision>, p.GetParserRuleContext())
 
 for _alt != <choice.exitAlt> && _alt != antlr.ATNInvalidAltNumber {
 	if _alt == 1<if(!choice.ast.greedy)>+1<endif> {
@@ -683,7 +678,7 @@ for _alt != <choice.exitAlt> && _alt != antlr.ATNInvalidAltNumber {
 PlusBlock(choice, alts, error) ::= <<
 p.SetState(<choice.blockStartStateNumber>)<! alt block decision !>
 p.GetErrorHandler().Sync(p)
-_alt := 1<if(!choice.ast.greedy)>+1<endif>
+_alt = 1<if(!choice.ast.greedy)>+1<endif>
 for ok := true; ok; ok = _alt != <choice.exitAlt> && _alt != antlr.ATNInvalidAltNumber {
 	switch _alt {
 	<if(alts)>
@@ -741,36 +736,40 @@ bitsetInlineComparison(s, bits) ::= <%
 %>
 
 InvokeRule(r, argExprsChunks) ::= <<
-p.SetState(<r.stateNumber>)
-<if(r.labels)>
+{
+	p.SetState(<r.stateNumber>)
+	<if(r.labels)>
 
-<if(r.ast.options.p)>
-var _x = p.<r.name>(<r.ast.options.p><if(argExprsChunks)>, <endif><argExprsChunks>)
-<else>
-var _x = p.<r.name; format="cap">(<argExprsChunks>)
-<endif>
+	<if(r.ast.options.p)>
+	var _x = p.<r.name>(<r.ast.options.p><if(argExprsChunks)>, <endif><argExprsChunks>)
+	<else>
+	var _x = p.<r.name; format="cap">(<argExprsChunks>)
+	<endif>
 
 
-<r.labels:{l | <labelref(l)> = _x}; separator="\n">
-<else>
-<if(r.ast.options.p)>
-p.<r.name>(<r.ast.options.p><if(argExprsChunks)>, <endif><argExprsChunks>)
-<else>
-p.<r.name; format="cap">(<argExprsChunks>)
-<endif>
-<endif>
+	<r.labels:{l | <labelref(l)> = _x}; separator="\n">
+	<else>
+	<if(r.ast.options.p)>
+	p.<r.name>(<r.ast.options.p><if(argExprsChunks)>, <endif><argExprsChunks>)
+	<else>
+	p.<r.name; format="cap">(<argExprsChunks>)
+	<endif>
+	<endif>
+}
 >>
 
 MatchToken(m) ::= <<
-p.SetState(<m.stateNumber>)
-<if(m.labels)>
+{
+	p.SetState(<m.stateNumber>)
+	<if(m.labels)>
 
-var _m = p.Match(<parser.name><m.name>)
+	var _m = p.Match(<parser.name><m.name>)
 
-<m.labels:{l | <labelref(l)> = _m}; separator="\n">
-<else>
-p.Match(<parser.name><m.name>)
-<endif>
+	<m.labels:{l | <labelref(l)> = _m}; separator="\n">
+	<else>
+	p.Match(<parser.name><m.name>)
+	<endif>
+}
 >>
 
 MatchSet(m, expr, capture) ::= "<CommonSetStuff(m, expr, capture, false)>"
@@ -778,28 +777,31 @@ MatchSet(m, expr, capture) ::= "<CommonSetStuff(m, expr, capture, false)>"
 MatchNotSet(m, expr, capture) ::= "<CommonSetStuff(m, expr, capture, true)>"
 
 CommonSetStuff(m, expr, capture, invert) ::= <<
-p.SetState(<m.stateNumber>)
-<if(m.labels)>
-
-var _lt = p.GetTokenStream().LT(1)<! TODO: Should LT be called always like InvokeRule and MatchToken? !>
-
-<m.labels:{l | <labelref(l)> = _lt}; separator="\n">
-
-<endif>
-<if(capture)>
-<capture>
-
-<endif>
-<if(invert)>if <m.varName> \<= 0 || <expr> <else>if !(<expr>)<endif> {
+{
+	p.SetState(<m.stateNumber>)
 	<if(m.labels)>
-	var _ri = p.GetErrorHandler().RecoverInline(p)
 
-	<m.labels:{l | <labelref(l)> = _ri}; separator="\n">
-	<else>
-	p.GetErrorHandler().RecoverInline(p)
+	var _lt = p.GetTokenStream().LT(1)<! TODO: Should LT be called always like InvokeRule and MatchToken? !>
+
+	<m.labels:{l | <labelref(l)> = _lt}; separator="\n">
+
 	<endif>
-} else {
-	p.Consume()
+	<if(capture)>
+	<capture>
+
+	<endif>
+	<if(invert)>if <m.varName> \<= 0 || <expr> <else>if !(<expr>)<endif> {
+		<if(m.labels)>
+		var _ri = p.GetErrorHandler().RecoverInline(p)
+
+		<m.labels:{l | <labelref(l)> = _ri}; separator="\n">
+		<else>
+		p.GetErrorHandler().RecoverInline(p)
+		<endif>
+	} else {
+		p.GetErrorHandler().ReportMatch(p)
+		p.Consume()
+	}
 }
 >>
 
@@ -895,7 +897,7 @@ TokenListDecl(t) ::= "<t.name> []antlr.Token"
 RuleContextDecl(r) ::= "<r.name> I<r.ctxName> "
 RuleContextListDecl(rdecl) ::= "<rdecl.name> []I<rdecl.ctxName>"
 
-AttributeDecl(d) ::= "<d.name> <d.type;format={lower}><if(d.initValue)>// TODO = <d.initValue><endif>"
+AttributeDecl(d) ::= "<d.name> <d.type><if(d.initValue)>// TODO = <d.initValue><endif>"
 
 ContextTokenGetterDecl(t) ::= <<
 <t.name; format="cap">() antlr.TerminalNode {
@@ -1039,13 +1041,13 @@ Set<a.name; format="cap">([]I<a.ctxName>) }; separator="\n\n">
 	<if(struct.attributeDecls)>
 
 	<struct.attributeDecls:{a | // Get<a.name; format="cap"> returns the <a.name> attribute.
-Get<a.name; format="cap">() <a.type;format="lower">}; separator="\n\n">
+Get<a.name; format="cap">() <a.type>}; separator="\n\n">
 	<endif>
 
 	<if(struct.attributeDecls)>
 
 	<struct.attributeDecls:{a | // Set<a.name; format="cap"> sets the <a.name> attribute.
-Set<a.name; format="cap">(<a.type;format="lower">)}; separator="\n\n">
+Set<a.name; format="cap">(<a.type>)}; separator="\n\n">
 	<endif>
 
 
@@ -1070,7 +1072,7 @@ func NewEmpty<struct.name>() *<struct.name> {
 
 func (*<struct.name>) Is<struct.name>() {}
 
-func New<struct.name>(parser antlr.Parser, parent antlr.ParserRuleContext, invokingState int<struct.ctorAttrs:{a | , <a.name> <a.type;format="lower">}>) *<struct.name> {
+func New<struct.name>(parser antlr.Parser, parent antlr.ParserRuleContext, invokingState int<struct.ctorAttrs:{a | , <a.name> <a.type>}>) *<struct.name> {
 	var p = new(<struct.name>)
 
 	p.<if(contextSuperClass)><contextSuperClass><else>BaseParserRuleContext<endif> = <if(contextSuperClass)>New<contextSuperClass><else>antlr.NewBaseParserRuleContext<endif>(parent, invokingState)
@@ -1138,12 +1140,12 @@ func (s *<struct.name>) GetParser() antlr.Parser { return s.parser }
 
 <if(struct.attributeDecls)>
 
-<struct.attributeDecls:{a | func (s *<struct.name>) Get<a.name; format="cap">() <a.type;format="lower"> { return s.<a.name> \}}; separator="\n\n">
+<struct.attributeDecls:{a | func (s *<struct.name>) Get<a.name; format="cap">() <a.type> { return s.<a.name> \}}; separator="\n\n">
 <endif>
 
 <if(struct.attributeDecls)>
 
-<struct.attributeDecls:{a | func (s *<struct.name>) Set<a.name; format="cap">(v <a.type;format="lower">) { s.<a.name> = v \}}; separator="\n\n">
+<struct.attributeDecls:{a | func (s *<struct.name>) Set<a.name; format="cap">(v <a.type>) { s.<a.name> = v \}}; separator="\n\n">
 <endif>
 
 <if(getters)>
@@ -1248,12 +1250,12 @@ func New<struct.name>(parser antlr.Parser, ctx antlr.ParserRuleContext) *<struct
 
 <if(struct.attributeDecls)>
 
-<struct.attributeDecls:{a | func (s *<struct.name>) Get<a.name; format="cap">() <a.type;format="lower"> { return s.<a.name> \}}; separator="\n\n">
+<struct.attributeDecls:{a | func (s *<struct.name>) Get<a.name; format="cap">() <a.type> { return s.<a.name> \}}; separator="\n\n">
 <endif>
 
 <if(struct.attributeDecls)>
 
-<struct.attributeDecls:{a | func (s *<struct.name>) Set<a.name; format="cap">(v <a.type;format="lower">) { s.<a.name> = v \}}; separator="\n\n">
+<struct.attributeDecls:{a | func (s *<struct.name>) Set<a.name; format="cap">(v <a.type>) { s.<a.name> = v \}}; separator="\n\n">
 <endif>
 
 func (s *<struct.name>) GetRuleContext() antlr.RuleContext {
@@ -1376,14 +1378,13 @@ var serializedLexerAtn []uint16
 var lexerDeserializer = antlr.NewATNDeserializer(nil)
 var lexerAtn = lexerDeserializer.DeserializeFromUInt16(serializedLexerAtn)
 
-<if(lexer.modes)>
+var lexerChannelNames = []string{
+	"DEFAULT_TOKEN_CHANNEL", "HIDDEN"<if (lexer.channels)>, <lexer.channels:{c | "<c>"}; separator=", ", wrap><endif>,
+}
+
 var lexerModeNames = []string{
 	<lexer.modes:{m | "<m>"}; separator=", ", wrap>,
 }
-<else>
-var lexerModeNames []string
-<endif>
-
 
 <if(lexer.literalNames)>
 var lexerLiteralNames = []string{
@@ -1414,22 +1415,27 @@ var lexerRuleNames []string
 
 type <lexer.name> struct {
 	*<if(superClass)><superClass><else>antlr.BaseLexer<endif>
+	channelNames []string
 	modeNames []string
 	// TODO: EOF string
 }
 
-func New<lexer.name>(input antlr.CharStream) *<lexer.name> {
-	var lexerDecisionToDFA = make([]*antlr.DFA, len(lexerAtn.DecisionToState))
+var lexerDecisionToDFA = make([]*antlr.DFA, len(lexerAtn.DecisionToState))
 
+func init() {
 	for index, ds := range lexerAtn.DecisionToState {
 		lexerDecisionToDFA[index] = antlr.NewDFA(ds, index)
 	}
+}
+
+func New<lexer.name>(input antlr.CharStream) *<lexer.name> {
 
 	l := new(<lexer.name>)
 
 	l.BaseLexer = antlr.NewBaseLexer(input)
 	l.Interpreter = antlr.NewLexerATNSimulator(l, lexerAtn, lexerDecisionToDFA, antlr.NewPredictionContextCache())
 
+	l.channelNames = lexerChannelNames
 	l.modeNames = lexerModeNames
 	l.RuleNames = lexerRuleNames
 	l.LiteralNames = lexerLiteralNames
@@ -1451,9 +1457,21 @@ const (
 const <lexer.name><first(lexer.tokens)> = <lexer.tokens.(first(lexer.tokens))>
 <endif>
 
+<if(rest(lexer.channels))>
+
+// <lexer.name> channels.
+const (
+	<lexer.channels:{c | <lexer.name><c> = <lexer.channels.(c)>}; separator="\n">
+)
+<elseif(lexer.channels)>
+
+// <lexer.name><first(lexer.channels)> is the <lexer.name> channel.
+const <lexer.name><first(lexer.channels)> = <lexer.channels.(first(lexer.channels))>
+<endif>
+
 <if(rest(rest(lexer.modes)))>
 
-// <lexer.name> modes
+// <lexer.name> modes.
 const (
 	<first(rest(lexer.modes)):{m | <lexer.name><m> = iota + 1}>
 	<rest(rest(lexer.modes)):{m | <lexer.name><m>}; separator="\n">

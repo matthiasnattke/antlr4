@@ -1,32 +1,6 @@
-﻿/*
- * [The "BSD license"]
- *  Copyright (c) 2016 Mike Lischke
- *  Copyright (c) 2013 Terence Parr
- *  Copyright (c) 2013 Dan McLaughlin
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *  1. Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- *  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- *  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- *  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+﻿/* Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+ * Use of this file is governed by the BSD 3-clause license that
+ * can be found in the LICENSE.txt file in the project root.
  */
 
 #include "atn/LL1Analyzer.h"
@@ -62,7 +36,7 @@ ATN::ATN(ATN &&other) {
   modeToStartState = std::move(other.modeToStartState);
 }
 
-ATN::ATN(ATNType grammarType, size_t maxTokenType) : grammarType(grammarType), maxTokenType(maxTokenType) {
+ATN::ATN(ATNType grammarType_, size_t maxTokenType_) : grammarType(grammarType_), maxTokenType(maxTokenType_) {
 }
 
 ATN::~ATN() {
@@ -113,18 +87,21 @@ misc::IntervalSet ATN::nextTokens(ATNState *s, RuleContext *ctx) const {
 
 }
 
-misc::IntervalSet& ATN::nextTokens(ATNState *s) const {
-  if (s->nextTokenWithinRule.isEmpty()) {
-    s->nextTokenWithinRule = nextTokens(s, nullptr);
-    s->nextTokenWithinRule.setReadOnly(true);
+misc::IntervalSet const& ATN::nextTokens(ATNState *s) const {
+  if (!s->_nextTokenUpdated) {
+    std::unique_lock<std::mutex> lock { _mutex };
+    if (!s->_nextTokenUpdated) {
+      s->_nextTokenWithinRule = nextTokens(s, nullptr);
+      s->_nextTokenUpdated = true;
+    }
   }
-  return s->nextTokenWithinRule;
+  return s->_nextTokenWithinRule;
 }
 
 void ATN::addState(ATNState *state) {
   if (state != nullptr) {
     //state->atn = this;
-    state->stateNumber = (int)states.size();
+    state->stateNumber = static_cast<int>(states.size());
   }
 
   states.push_back(state);
@@ -137,7 +114,7 @@ void ATN::removeState(ATNState *state) {
 
 int ATN::defineDecisionState(DecisionState *s) {
   decisionToState.push_back(s);
-  s->decision = (int)decisionToState.size() - 1;
+  s->decision = static_cast<int>(decisionToState.size() - 1);
   return s->decision;
 }
 
@@ -177,7 +154,7 @@ misc::IntervalSet ATN::getExpectedTokens(size_t stateNumber, RuleContext *contex
     if (ctx->parent == nullptr) {
       break;
     }
-    ctx = (RuleContext *)ctx->parent;
+    ctx = static_cast<RuleContext *>(ctx->parent);
   }
 
   if (following.contains(Token::EPSILON)) {

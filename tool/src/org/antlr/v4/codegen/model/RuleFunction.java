@@ -1,36 +1,13 @@
 /*
- * [The "BSD license"]
- *  Copyright (c) 2012 Terence Parr
- *  Copyright (c) 2012 Sam Harwell
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *  1. Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- *  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- *  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- *  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+ * Use of this file is governed by the BSD 3-clause license that
+ * can be found in the LICENSE.txt file in the project root.
  */
 
 package org.antlr.v4.codegen.model;
 
 import org.antlr.runtime.RecognitionException;
+import org.antlr.runtime.tree.CommonTree;
 import org.antlr.runtime.tree.CommonTreeNodeStream;
 import org.antlr.v4.codegen.OutputModelFactory;
 import org.antlr.v4.codegen.model.decl.AltLabelStructDecl;
@@ -56,6 +33,7 @@ import org.antlr.v4.tool.Rule;
 import org.antlr.v4.tool.ast.ActionAST;
 import org.antlr.v4.tool.ast.AltAST;
 import org.antlr.v4.tool.ast.GrammarAST;
+import org.antlr.v4.tool.ast.PredAST;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -67,6 +45,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.antlr.v4.parse.ANTLRParser.RULE_REF;
+import static org.antlr.v4.parse.ANTLRParser.STRING_LITERAL;
 import static org.antlr.v4.parse.ANTLRParser.TOKEN_REF;
 
 /** */
@@ -190,54 +169,108 @@ public class RuleFunction extends OutputModelObject {
 	}
 
 	/** for all alts, find which ref X or r needs List
-	   Must see across alts.  If any alt needs X or r as list, then
+	   Must see across alts. If any alt needs X or r as list, then
 	   define as list.
 	 */
 	public Set<Decl> getDeclsForAllElements(List<AltAST> altASTs) {
 		Set<String> needsList = new HashSet<String>();
+		Set<String> nonOptional = new HashSet<String>();
 		List<GrammarAST> allRefs = new ArrayList<GrammarAST>();
+		boolean firstAlt = true;
+		IntervalSet reftypes = new IntervalSet(RULE_REF, TOKEN_REF, STRING_LITERAL);
 		for (AltAST ast : altASTs) {
-			IntervalSet reftypes = new IntervalSet(RULE_REF, TOKEN_REF);
-			List<GrammarAST> refs = ast.getNodesWithType(reftypes);
+			List<GrammarAST> refs = getRuleTokens(ast.getNodesWithType(reftypes));
 			allRefs.addAll(refs);
-			FrequencySet<String> altFreq = getElementFrequenciesForAlt(ast);
+			Pair<FrequencySet<String>, FrequencySet<String>> minAndAltFreq = getElementFrequenciesForAlt(ast);
+			FrequencySet<String> minFreq = minAndAltFreq.a;
+			FrequencySet<String> altFreq = minAndAltFreq.b;
 			for (GrammarAST t : refs) {
-				String refLabelName = t.getText();
-				if ( altFreq.count(refLabelName)>1 ) {
-					needsList.add(refLabelName);
+				String refLabelName = getName(t);
+
+				if (refLabelName != null) {
+					if (altFreq.count(refLabelName) > 1) {
+						needsList.add(refLabelName);
+					}
+
+					if (firstAlt && minFreq.count(refLabelName) != 0) {
+						nonOptional.add(refLabelName);
+					}
 				}
 			}
+
+			for (String ref : nonOptional.toArray(new String[nonOptional.size()])) {
+				if (minFreq.count(ref) == 0) {
+					nonOptional.remove(ref);
+				}
+			}
+
+			firstAlt = false;
 		}
 		Set<Decl> decls = new LinkedHashSet<Decl>();
 		for (GrammarAST t : allRefs) {
-			String refLabelName = t.getText();
+			String refLabelName = getName(t);
+
+			if (refLabelName == null) {
+				continue;
+			}
+
 			List<Decl> d = getDeclForAltElement(t,
 												refLabelName,
-												needsList.contains(refLabelName));
+												needsList.contains(refLabelName),
+												!nonOptional.contains(refLabelName));
 			decls.addAll(d);
 		}
 		return decls;
 	}
 
+	private List<GrammarAST> getRuleTokens(List<GrammarAST> refs) {
+		List<GrammarAST> result = new ArrayList<>(refs.size());
+		for (GrammarAST ref : refs) {
+			CommonTree r = ref;
+
+			boolean ignore = false;
+			while (r != null) {
+				// Ignore string literals in predicates
+				if (r instanceof PredAST) {
+					ignore = true;
+					break;
+				}
+				r = r.parent;
+			}
+
+			if (!ignore) {
+				result.add(ref);
+			}
+		}
+
+		return result;
+	}
+
+	private String getName(GrammarAST token) {
+		String tokenText = token.getText();
+		String tokenName = token.getType() != STRING_LITERAL ? tokenText : token.g.getTokenName(tokenText);
+		return tokenName == null || tokenName.startsWith("T__") ? null : tokenName; // Do not include tokens with auto generated names
+	}
+
 	/** Given list of X and r refs in alt, compute how many of each there are */
-	protected FrequencySet<String> getElementFrequenciesForAlt(AltAST ast) {
+	protected Pair<FrequencySet<String>, FrequencySet<String>> getElementFrequenciesForAlt(AltAST ast) {
 		try {
 			ElementFrequenciesVisitor visitor = new ElementFrequenciesVisitor(new CommonTreeNodeStream(new GrammarASTAdaptor(), ast));
 			visitor.outerAlternative();
 			if (visitor.frequencies.size() != 1) {
 				factory.getGrammar().tool.errMgr.toolError(ErrorType.INTERNAL_ERROR);
-				return new FrequencySet<String>();
+				return new Pair<>(new FrequencySet<String>(), new FrequencySet<String>());
 			}
 
-			return visitor.frequencies.peek();
+			return new Pair<>(visitor.getMinFrequencies(), visitor.frequencies.peek());
 		}
 		catch (RecognitionException ex) {
 			factory.getGrammar().tool.errMgr.toolError(ErrorType.INTERNAL_ERROR, ex);
-			return new FrequencySet<String>();
+			return new Pair<>(new FrequencySet<String>(), new FrequencySet<String>());
 		}
 	}
 
-	public List<Decl> getDeclForAltElement(GrammarAST t, String refLabelName, boolean needList) {
+	public List<Decl> getDeclForAltElement(GrammarAST t, String refLabelName, boolean needList, boolean optional) {
 		List<Decl> decls = new ArrayList<Decl>();
 		if ( t.getType()==RULE_REF ) {
 			Rule rref = factory.getGrammar().getRule(t.getText());
@@ -249,7 +282,7 @@ public class RuleFunction extends OutputModelObject {
 				decls.add( new ContextRuleListIndexedGetterDecl(factory, refLabelName, ctxName) );
 			}
 			else {
-				decls.add( new ContextRuleGetterDecl(factory, refLabelName, ctxName) );
+				decls.add( new ContextRuleGetterDecl(factory, refLabelName, ctxName, optional) );
 			}
 		}
 		else {
@@ -259,7 +292,7 @@ public class RuleFunction extends OutputModelObject {
 				decls.add( new ContextTokenListIndexedGetterDecl(factory, refLabelName) );
 			}
 			else {
-				decls.add( new ContextTokenGetterDecl(factory, refLabelName) );
+				decls.add( new ContextTokenGetterDecl(factory, refLabelName, optional) );
 			}
 		}
 		return decls;

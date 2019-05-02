@@ -1,3 +1,4 @@
+
 include_directories(
   ${PROJECT_SOURCE_DIR}/runtime/src
   ${PROJECT_SOURCE_DIR}/runtime/src/atn
@@ -43,14 +44,45 @@ elseif(APPLE)
   target_link_libraries(antlr4_static ${COREFOUNDATION_LIBRARY})
 endif()
 
-set(disabled_compile_warnings "-Wno-overloaded-virtual")
-if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  set(disabled_compile_warnings "/wd4251")
+else()
+  set(disabled_compile_warnings "-Wno-overloaded-virtual")
+endif()
+
+
+if("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
   set(disabled_compile_warnings "${disabled_compile_warnings} -Wno-dollar-in-identifier-extension -Wno-four-char-constants")
-elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
+elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU" OR "${CMAKE_CXX_COMPILER_ID}" MATCHES "Intel")
   set(disabled_compile_warnings "${disabled_compile_warnings} -Wno-multichar")
 endif()
 
-  
+set(extra_share_compile_flags "")
+set(extra_static_compile_flags "")
+if(WIN32)
+  set(extra_share_compile_flags "-DANTLR4CPP_EXPORTS")
+  set(extra_static_compile_flags "-DANTLR4CPP_STATIC")
+endif(WIN32)
+if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  if(WITH_STATIC_CRT)
+    target_compile_options(antlr4_shared PRIVATE "/MT$<$<CONFIG:Debug>:d>")
+    target_compile_options(antlr4_static PRIVATE "/MT$<$<CONFIG:Debug>:d>")
+  else()
+    target_compile_options(antlr4_shared PRIVATE "/MD$<$<CONFIG:Debug>:d>")
+    target_compile_options(antlr4_static PRIVATE "/MD$<$<CONFIG:Debug>:d>")
+  endif()
+endif()
+
+set(static_lib_suffix "")
+if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  set(static_lib_suffix "-static")
+endif()
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  set(extra_share_compile_flags "-DANTLR4CPP_EXPORTS -MP /wd4251")
+  set(extra_static_compile_flags "-DANTLR4CPP_STATIC -MP")
+endif()
+
 set_target_properties(antlr4_shared
                       PROPERTIES VERSION   ${ANTLR_VERSION}
                                  SOVERSION ${ANTLR_VERSION}
@@ -59,22 +91,25 @@ set_target_properties(antlr4_shared
                                  # TODO: test in windows. DLL is treated as runtime.
                                  # see https://cmake.org/cmake/help/v3.0/prop_tgt/LIBRARY_OUTPUT_DIRECTORY.html
                                  RUNTIME_OUTPUT_DIRECTORY ${LIB_OUTPUT_DIR}
-                                 COMPILE_FLAGS "${disabled_compile_warnings}")
+                                 ARCHIVE_OUTPUT_DIRECTORY ${LIB_OUTPUT_DIR}
+                                 COMPILE_FLAGS "${disabled_compile_warnings} ${extra_share_compile_flags}")
 
 set_target_properties(antlr4_static
                       PROPERTIES VERSION   ${ANTLR_VERSION}
                                  SOVERSION ${ANTLR_VERSION}
-                                 OUTPUT_NAME antlr4-runtime
+                                 OUTPUT_NAME "antlr4-runtime${static_lib_suffix}"
                                  ARCHIVE_OUTPUT_DIRECTORY ${LIB_OUTPUT_DIR}
-                                 COMPILE_FLAGS "${disabled_compile_warnings}")
+                                 COMPILE_FLAGS "${disabled_compile_warnings} ${extra_static_compile_flags}")
 
 install(TARGETS antlr4_shared
-        DESTINATION lib)
+        DESTINATION lib 
+        EXPORT antlr4-targets)
 install(TARGETS antlr4_static
-        ARCHIVE DESTINATION lib)
+        DESTINATION lib
+        EXPORT antlr4-targets)
 
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/runtime/src/" 
-        DESTINATION "include" 
+        DESTINATION "include/antlr4-runtime"
         COMPONENT dev 
         FILES_MATCHING PATTERN "*.h"
         )

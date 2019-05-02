@@ -1,31 +1,7 @@
 /*
- * [The "BSD license"]
- *  Copyright (c) 2012 Terence Parr
- *  Copyright (c) 2012 Sam Harwell
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *  1. Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- *  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- *  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- *  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+ * Use of this file is governed by the BSD 3-clause license that
+ * can be found in the LICENSE.txt file in the project root.
  */
 package org.antlr.v4.test.runtime.cpp;
 
@@ -58,49 +34,45 @@ import org.antlr.v4.runtime.misc.IntegerList;
 import org.antlr.v4.runtime.misc.Interval;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.semantics.SemanticPipeline;
-import org.antlr.v4.test.runtime.java.ErrorQueue;
+import org.antlr.v4.test.runtime.ErrorQueue;
+import org.antlr.v4.test.runtime.RuntimeTestSupport;
+import org.antlr.v4.test.runtime.StreamVacuum;
 import org.antlr.v4.tool.ANTLRMessage;
 import org.antlr.v4.tool.DOTGenerator;
-import org.antlr.v4.tool.DefaultToolListener;
 import org.antlr.v4.tool.Grammar;
 import org.antlr.v4.tool.GrammarSemanticsMessage;
 import org.antlr.v4.tool.LexerGrammar;
 import org.antlr.v4.tool.Rule;
-import org.junit.Before;
-import org.junit.rules.TestRule;
-import org.junit.rules.TestWatcher;
-import org.junit.runner.Description;
 import org.stringtemplate.v4.ST;
 import org.stringtemplate.v4.STGroup;
 import org.stringtemplate.v4.STGroupString;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import static org.antlr.v4.test.runtime.BaseRuntimeTest.antlrOnString;
+import static org.antlr.v4.test.runtime.BaseRuntimeTest.writeFile;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-public abstract class BaseCppTest {
+public class BaseCppTest implements RuntimeTestSupport {
 	// -J-Dorg.antlr.v4.test.BaseTest.level=FINE
 	// private static final Logger LOGGER = Logger.getLogger(BaseTest.class.getName());
 	public static final String newline = System.getProperty("line.separator");
@@ -109,40 +81,60 @@ public abstract class BaseCppTest {
 	public String tmpdir = null;
 
 	/** If error during parser execution, store stderr here; can't return
-     *  stdout and stderr.  This doesn't trap errors from running antlr.
-     */
+	 *  stdout and stderr.  This doesn't trap errors from running antlr.
+	 */
 	protected String stderrDuringParse;
 
-	@org.junit.Rule
-	public final TestRule testWatcher = new TestWatcher() {
-
-		@Override
-		protected void succeeded(Description description) {
-			// remove tmpdir if no error.
-			eraseTempDir();
-		}
-
-	   protected void starting(Description description) {
-	      System.out.println("\n>>>>> Running test: " + description.getMethodName());
-	   }
-	};
+	/** Errors found while running antlr */
+	protected StringBuilder antlrToolErrors;
 
 	private String getPropertyPrefix() {
 		return "antlr-" + getLanguage().toLowerCase();
 	}
 
-    @Before
-	public void setUp() throws Exception {
-        // new output dir for each test
-    	String propName = getPropertyPrefix() + "-test-dir";
-    	String prop = System.getProperty(propName);
-    	if(prop!=null && prop.length()>0)
-    		tmpdir = prop;
-    	else
-    		tmpdir = new File(System.getProperty("java.io.tmpdir"), getClass().getSimpleName()+"-"+System.currentTimeMillis()).getAbsolutePath();
-    }
+	@Override
+	public void testSetUp() throws Exception {
+		// new output dir for each test
+		String propName = getPropertyPrefix() + "-test-dir";
+		String prop = System.getProperty(propName);
+		if(prop!=null && prop.length()>0) {
+			tmpdir = prop;
+		}
+		else {
+			tmpdir = new File(System.getProperty("java.io.tmpdir"),
+			                  getClass().getSimpleName()+"-"+Thread.currentThread().getName()+"-"+System.currentTimeMillis()).getAbsolutePath();
+		}
+		antlrToolErrors = new StringBuilder();
+	}
 
-    protected org.antlr.v4.Tool newTool(String[] args) {
+	@Override
+	public void testTearDown() throws Exception {
+	}
+
+	@Override
+	public String getTmpDir() {
+		return tmpdir;
+	}
+
+	@Override
+	public String getStdout() {
+		return null;
+	}
+
+	@Override
+	public String getParseErrors() {
+		return stderrDuringParse;
+	}
+
+	@Override
+	public String getANTLRToolErrors() {
+		if ( antlrToolErrors.length()==0 ) {
+			return null;
+		}
+		return antlrToolErrors.toString();
+	}
+
+	protected org.antlr.v4.Tool newTool(String[] args) {
 		Tool tool = new Tool(args);
 		return tool;
 	}
@@ -229,8 +221,8 @@ public abstract class BaseCppTest {
 	}
 
 	public List<String> getTokenTypes(LexerGrammar lg,
-									  ATN atn,
-									  CharStream input)
+	                                  ATN atn,
+	                                  CharStream input)
 	{
 		LexerATNSimulator interp = new LexerATNSimulator(atn,new DFA[] { new DFA(atn.modeToStartState.get(Lexer.DEFAULT_MODE)) },null);
 		List<String> tokenTypes = new ArrayList<String>();
@@ -326,82 +318,35 @@ public abstract class BaseCppTest {
 		return "Cpp";
 	}
 
-	/** Return true if all is ok, no errors */
-	protected ErrorQueue antlr(String fileName, String grammarFileName, String grammarStr, boolean defaultListener, String... extraOptions) {
-		System.out.println("dir "+tmpdir);
-		mkdir(tmpdir);
-		writeFile(tmpdir, fileName, grammarStr);
-		final List<String> options = new ArrayList<String>();
-		Collections.addAll(options, extraOptions);
-		options.add("-Dlanguage=" + getLanguage());
-		options.add("-o");
-		options.add(tmpdir);
-		options.add("-lib");
-		options.add(tmpdir);
-		options.add(new File(tmpdir,grammarFileName).toString());
-
-		final String[] optionsA = new String[options.size()];
-		options.toArray(optionsA);
-		Tool antlr = newTool(optionsA);
-		ErrorQueue equeue = new ErrorQueue(antlr);
-		antlr.addListener(equeue);
-		if (defaultListener) {
-			antlr.addListener(new DefaultToolListener(antlr));
-		}
-		antlr.processGrammarsOnCommandLine();
-
-		if ( !defaultListener && !equeue.errors.isEmpty() ) {
-			System.err.println("antlr reports errors from "+options);
-			for (int i = 0; i < equeue.errors.size(); i++) {
-				ANTLRMessage msg = equeue.errors.get(i);
-				System.err.println(msg);
-			}
-			System.out.println("!!!\ngrammar:");
-			System.out.println(grammarStr);
-			System.out.println("###");
-		}
-		if ( !defaultListener && !equeue.warnings.isEmpty() ) {
-			System.err.println("antlr reports warnings from "+options);
-			for (int i = 0; i < equeue.warnings.size(); i++) {
-				ANTLRMessage msg = equeue.warnings.get(i);
-				System.err.println(msg);
-			}
-		}
-
-		return equeue;
-	}
-
 	protected String execLexer(String grammarFileName,
-							   String grammarStr,
-							   String lexerName,
-							   String input)
+	                           String grammarStr,
+	                           String lexerName,
+	                           String input)
 	{
 		return execLexer(grammarFileName, grammarStr, lexerName, input, false);
 	}
 
-	protected String execLexer(String grammarFileName,
-							   String grammarStr,
-							   String lexerName,
-							   String input,
-							   boolean showDFA)
+	@Override
+	public  String execLexer(String grammarFileName,
+	                         String grammarStr,
+	                         String lexerName,
+	                         String input,
+	                         boolean showDFA)
 	{
 		boolean success = rawGenerateAndBuildRecognizer(grammarFileName,
-									  grammarStr,
-									  null,
-									  lexerName,"-no-listener");
+		                                                grammarStr,
+		                                                null,
+		                                                lexerName,"-no-listener");
 		assertTrue(success);
 		writeFile(tmpdir, "input", input);
 		writeLexerTestFile(lexerName, showDFA);
 		String output = execModule("Test.cpp");
-		if ( stderrDuringParse!=null && stderrDuringParse.length()>0 ) {
-			System.err.println(stderrDuringParse);
-		}
 		return output;
 	}
 
 	public ParseTree execStartRule(String startRuleName, Parser parser)
 		throws IllegalAccessException, InvocationTargetException,
-			   NoSuchMethodException
+		NoSuchMethodException
 	{
 		Method startRule = null;
 		Object[] args = null;
@@ -418,67 +363,67 @@ public abstract class BaseCppTest {
 		return result;
 	}
 
-	protected String execParser(String grammarFileName,
-			String grammarStr,
-			String parserName,
-			String lexerName,
-			String listenerName,
-			String visitorName,
-			String startRuleName,
-			String input,
-			boolean debug) {
-		return execParser(grammarFileName, grammarStr, parserName, lexerName,
-				listenerName, visitorName, startRuleName, input, debug, false);
-	}
-
-	protected String execParser(String grammarFileName,
-								String grammarStr,
-								String parserName,
-								String lexerName,
-								String listenerName,
-								String visitorName,
-								String startRuleName,
-								String input,
-								boolean debug,
-								boolean trace)
+//	protected String execParser(String grammarFileName,
+//	                            String grammarStr,
+//	                            String parserName,
+//	                            String lexerName,
+//	                            String listenerName,
+//	                            String visitorName,
+//	                            String startRuleName,
+//	                            String input,
+//	                            boolean debug) {
+//		return execParser(grammarFileName, grammarStr, parserName, lexerName,
+//		                  listenerName, visitorName, startRuleName, input, debug);
+//	}
+//
+	@Override
+	public String execParser(String grammarFileName,
+	                         String grammarStr,
+	                         String parserName,
+	                         String lexerName,
+	                         String listenerName,
+	                         String visitorName,
+	                         String startRuleName,
+	                         String input,
+	                         boolean showDiagnosticErrors)
 	{
 		boolean success = rawGenerateAndBuildRecognizer(grammarFileName,
-														grammarStr,
-														parserName,
-														lexerName,
-														"-visitor");
+		                                                grammarStr,
+		                                                parserName,
+		                                                lexerName,
+		                                                "-visitor");
 		assertTrue(success);
 		writeFile(tmpdir, "input", input);
 		rawBuildRecognizerTestFile(parserName,
-								 lexerName,
-								 listenerName,
-								 visitorName,
-								 startRuleName,
-								 debug,
-								 trace);
+		                           lexerName,
+		                           listenerName,
+		                           visitorName,
+		                           startRuleName,
+		                           showDiagnosticErrors,
+		                           false);
 		return execRecognizer();
 	}
 
 	/** Return true if all is well */
 	protected boolean rawGenerateAndBuildRecognizer(String grammarFileName,
-													String grammarStr,
-													String parserName,
-													String lexerName,
-													String... extraOptions)
+	                                                String grammarStr,
+	                                                String parserName,
+	                                                String lexerName,
+	                                                String... extraOptions)
 	{
 		return rawGenerateAndBuildRecognizer(grammarFileName, grammarStr, parserName, lexerName, false, extraOptions);
 	}
 
 	/** Return true if all is well */
 	protected boolean rawGenerateAndBuildRecognizer(String grammarFileName,
-													String grammarStr,
-													String parserName,
-													String lexerName,
-													boolean defaultListener,
-													String... extraOptions)
+	                                                String grammarStr,
+	                                                String parserName,
+	                                                String lexerName,
+	                                                boolean defaultListener,
+	                                                String... extraOptions)
 	{
 		ErrorQueue equeue =
-			antlr(grammarFileName, grammarFileName, grammarStr, defaultListener, extraOptions);
+			antlrOnString(getTmpDir(), "Cpp", grammarFileName, grammarStr, defaultListener, extraOptions);
 		if (!equeue.errors.isEmpty()) {
 			return false;
 		}
@@ -505,24 +450,24 @@ public abstract class BaseCppTest {
 	}
 
 	protected void rawBuildRecognizerTestFile(String parserName,
-									   String lexerName,
-									   String listenerName,
-									   String visitorName,
-									   String parserStartRuleName,
-									   boolean debug,
-									   boolean trace)
+	                                          String lexerName,
+	                                          String listenerName,
+	                                          String visitorName,
+	                                          String parserStartRuleName,
+	                                          boolean debug,
+	                                          boolean trace)
 	{
-        this.stderrDuringParse = null;
+		this.stderrDuringParse = null;
 		if ( parserName==null ) {
 			writeLexerTestFile(lexerName, false);
 		}
 		else {
 			writeParserTestFile(parserName,
-						  lexerName,
-						  listenerName,
-						  visitorName,
-						  parserStartRuleName,
-						  debug, trace);
+			                    lexerName,
+			                    listenerName,
+			                    visitorName,
+			                    parserStartRuleName,
+			                    debug, trace);
 		}
 	}
 
@@ -530,11 +475,32 @@ public abstract class BaseCppTest {
 		return execModule("Test.cpp");
 	}
 
+
+	private static String detectedOS;
+	public static String getOS() {
+		if (detectedOS == null) {
+			String os = System.getProperty("os.name", "generic").toLowerCase(Locale.ENGLISH);
+			if ((os.indexOf("mac") >= 0) || (os.indexOf("darwin") >= 0)) {
+				detectedOS = "mac";
+			}
+			else if (os.indexOf("win") >= 0) {
+				detectedOS = "windows";
+			}
+			else if (os.indexOf("nux") >= 0) {
+				detectedOS = "linux";
+			}
+			else {
+				detectedOS = "unknown";
+			}
+		}
+		return detectedOS;
+	}
+
 	public List<String> allCppFiles(String path) {
 		ArrayList<String> files = new ArrayList<String>();
 		File folder = new File(path);
 		File[] listOfFiles = folder.listFiles();
-    		for (int i = 0; i < listOfFiles.length; i++) {
+		for (int i = 0; i < listOfFiles.length; i++) {
 			String file = listOfFiles[i].getAbsolutePath();
 			if (file.endsWith(".cpp")) {
 				files.add(file);
@@ -543,7 +509,8 @@ public abstract class BaseCppTest {
 		return files;
 	}
 
-  private String runProcess(ProcessBuilder builder, String description) throws Exception {
+	private String runProcess(ProcessBuilder builder, String description, boolean showStderr) throws Exception {
+//		System.out.println("BUILDER: "+builder.command());
 		Process process = builder.start();
 		StreamVacuum stdoutVacuum = new StreamVacuum(process.getInputStream());
 		StreamVacuum stderrVacuum = new StreamVacuum(process.getErrorStream());
@@ -553,191 +520,177 @@ public abstract class BaseCppTest {
 		stdoutVacuum.join();
 		stderrVacuum.join();
 		String output = stdoutVacuum.toString();
-		if (stderrVacuum.toString().length() > 0) {
+		if ( stderrVacuum.toString().length()>0 ) {
 			this.stderrDuringParse = stderrVacuum.toString();
-			System.err.println("exec stderrVacuum: "+ stderrVacuum);
+			if ( showStderr ) System.err.println(this.stderrDuringParse);
 		}
 		if (errcode != 0) {
-			this.stderrDuringParse = "execution failed with error code: " + errcode;
-			System.err.println(description + " exited with error code: " + errcode);
+			String err = "execution of '"+description+"' failed with error code: "+errcode;
+			if ( this.stderrDuringParse!=null ) {
+				this.stderrDuringParse += err;
+			}
+			else {
+				this.stderrDuringParse = err;
+			}
 		}
-		
+
 		return output;
-  }
-  
-  // TODO: add a buildRuntimeOnWindows variant.
-  private boolean buildRuntime() {
-    String runtimePath = locateRuntime();
-    System.out.println("Building ANTLR4 C++ runtime (if necessary) at "+ runtimePath);
-    
-    try {
-  		ArrayList<String> args = new ArrayList<String>();
-  		args.add("cmake");
-  		args.add(".");
-  		args.add("-DCMAKE_BUILD_TYPE=release");
-  		ProcessBuilder builder = new ProcessBuilder(args.toArray(new String[0]));
-  		builder.directory(new File(runtimePath));
-  		if (runProcess(builder, "antlr runtime cmake") == null)
-  		  return false;
+	}
+
+	private String runCommand(String command[], String workPath, String description, boolean showStderr) throws Exception {
+		ProcessBuilder builder = new ProcessBuilder(command);
+		builder.directory(new File(workPath));
+
+		return runProcess(builder, description, showStderr);
+	}
+
+	// TODO: add a buildRuntimeOnWindows variant.
+	private boolean buildRuntime() {
+		String runtimePath = locateRuntime();
+		System.out.println("Building ANTLR4 C++ runtime (if necessary) at "+ runtimePath);
+
+		try {
+			String command[] = { "cmake", ".", /*"-DCMAKE_CXX_COMPILER=clang++",*/ "-DCMAKE_BUILD_TYPE=release" };
+			if (runCommand(command, runtimePath, "antlr runtime cmake", false) == null) {
+				return false;
+			}
 		}
 		catch (Exception e) {
 			System.err.println("can't configure antlr cpp runtime cmake file");
-			e.printStackTrace(System.err);
 		}
-		
-    try {
-  		ArrayList<String> args = new ArrayList<String>();
-  		args.add("make");
-  		args.add("-j");
-  		args.add("8"); // Assuming a reasonable amount of available CPU cores.
-  		ProcessBuilder builder = new ProcessBuilder(args.toArray(new String[0]));
-  		builder.directory(new File(runtimePath));
-  		if (runProcess(builder, "building antlr runtime") == null)
-  		  return false;
+
+		try {
+			String command[] = { "make", "-j", "8" }; // Assuming a reasonable amount of available CPU cores.
+			if (runCommand(command, runtimePath, "building antlr runtime", true) == null)
+				return false;
 		}
 		catch (Exception e) {
 			System.err.println("can't compile antlr cpp runtime");
-			//e.printStackTrace(System.err);
+			e.printStackTrace(System.err);
+			try {
+			    String command[] = { "ls", "-la" };
+					String output = runCommand(command, runtimePath + "/dist/", "printing library folder content", true);
+				System.out.println(output);
+			}
+			catch (Exception e2) {
+				System.err.println("can't even list folder content");
+				e2.printStackTrace(System.err);
+			}
 		}
-		
+
+/* for debugging
+		try {
+		    String command[] = { "ls", "-la" };
+				String output = runCommand(command, runtimePath + "/dist/", "printing library folder content");
+			System.out.println(output);
+		}
+		catch (Exception e) {
+			System.err.println("can't print folder content");
+		}
+*/
+
 		return true;
-  }
-  
-  static boolean runtimeBuiltOnce = false;
-  
+	}
+
+	static Boolean runtimeBuiltOnce = false;
+
 	public String execModule(String fileName) {
-		String compilerPath = locateCompiler();
 		String runtimePath = locateRuntime();
 		String includePath = runtimePath + "/runtime/src";
 		String binPath = new File(new File(tmpdir), "a.out").getAbsolutePath();
 		String inputPath = new File(new File(tmpdir), "input").getAbsolutePath();
-		
-    // Build runtime using cmake once.
-    if (!runtimeBuiltOnce) {
-      runtimeBuiltOnce = true;
-      if (!buildRuntime()) {
-        return null;
-      }
-    }
-    
-		// Create symlink to the runtime.
-		// TODO: make this platform neutral.
+
+		// Build runtime using cmake once.
+		synchronized (runtimeBuiltOnce) {
+			if ( !runtimeBuiltOnce ) {
+				try {
+					String command[] = {"clang++", "--version"};
+					String output = runCommand(command, tmpdir, "printing compiler version", false);
+					System.out.println("Compiler version is: "+output);
+				}
+				catch (Exception e) {
+					System.err.println("Can't get compiler version");
+				}
+
+				runtimeBuiltOnce = true;
+				if ( !buildRuntime() ) {
+					System.out.println("C++ runtime build failed\n");
+					return null;
+				}
+				System.out.println("C++ runtime build succeeded\n");
+			}
+		}
+
+		// Create symlink to the runtime. Currently only used on OSX.
+		String libExtension = (getOS().equals("mac")) ? "dylib" : "so";
 		try {
-			ArrayList<String> args = new ArrayList<String>();
-			args.add("ln");
-			args.add("-s");
-			args.add(runtimePath + "/dist/libantlr4-runtime.dylib"); // TODO: make this platform neutral
-			ProcessBuilder builder = new ProcessBuilder(args.toArray(new String[0]));
-			builder.directory(new File(tmpdir));
-			String output = runProcess(builder, "sym linking C++ runtime");
-			if (output == null)
-			  return null;
+			String command[] = { "ln", "-s", runtimePath + "/dist/libantlr4-runtime." + libExtension };
+			if (runCommand(command, tmpdir, "sym linking C++ runtime", true) == null)
+				return null;
 		}
 		catch (Exception e) {
-			System.err.println("can't exec module: " + fileName);
-			//e.printStackTrace(System.err);
+			System.err.println("can't create link to " + runtimePath + "/dist/libantlr4-runtime." + libExtension);
+			e.printStackTrace(System.err);
+			return null;
 		}
-		
-		// Compile the test code.
+
 		try {
-			ArrayList<String> args = new ArrayList<String>();
-			args.add(compilerPath);
-			args.add("-std=c++11");
-			args.add("-I");
-			args.add(includePath);
-			args.add("-L");
-			args.add(".");
-			args.add("-lantlr4-runtime");
-			args.addAll(allCppFiles(tmpdir));
-			ProcessBuilder builder = new ProcessBuilder(args.toArray(new String[0]));
-			builder.directory(new File(tmpdir));
-			String output = runProcess(builder, "building test binary");
-			if (output == null) {
+			List<String> command2 = new ArrayList<String>(Arrays.asList("clang++", "-std=c++11", "-I", includePath, "-L.", "-lantlr4-runtime", "-o", "a.out"));
+			command2.addAll(allCppFiles(tmpdir));
+			if (runCommand(command2.toArray(new String[0]), tmpdir, "building test binary", true) == null) {
 				return null;
 			}
 		}
 		catch (Exception e) {
-			System.err.println("can't compile module: " + fileName);
-			//e.printStackTrace(System.err);
+			System.err.println("can't compile test module: " + e.getMessage());
+			e.printStackTrace(System.err);
 			return null;
 		}
 
-		// Now run the newly minted binary.
+		// Now run the newly minted binary. Reset the error output, as we could have got compiler warnings which are not relevant here.
+		this.stderrDuringParse = null;
 		try {
 			ProcessBuilder builder = new ProcessBuilder(binPath, inputPath);
 			builder.directory(new File(tmpdir));
-			String output = runProcess(builder, "running test binary");
-		  
+			Map<String, String> env = builder.environment();
+			env.put("LD_PRELOAD", runtimePath + "/dist/libantlr4-runtime." + libExtension);
+			String output = runProcess(builder, "running test binary", false);
+			if ( output.length()==0 ) {
+				output = null;
+			}
+
+      /* for debugging
+		  System.out.println("=========================================================");
+		  System.out.println(output);
+		  System.out.println("=========================================================");
+		  */
 			return output;
 		}
 		catch (Exception e) {
 			System.err.println("can't exec module: " + fileName);
-			//e.printStackTrace(System.err);
+			e.printStackTrace(System.err);
 		}
-		
+
 		return null;
-	}
-
-	private String locateTool(String tool) {
-		String[] roots = { "/usr/bin/", "/usr/local/bin/" };
-		for(String root : roots) {
-			if(new File(root + tool).exists())
-				return root + tool;
-		}
-		throw new RuntimeException("Could not locate " + tool);
-	}
-
-	protected String locateCompiler() {
-		String propName = getPropertyPrefix() + "-compiler";
-   		String prop = System.getProperty(propName);
-   		if(prop==null || prop.length()==0)
-   			prop = locateTool("g++");  // Also try cc
-		File file = new File(prop);
-		if(!file.exists())
-			throw new RuntimeException("Missing system property:" + propName);
-		return file.getAbsolutePath();
 	}
 
 	protected String locateRuntime() {
 		final ClassLoader loader = Thread.currentThread().getContextClassLoader();
-		final URL runtimeSrc = loader.getResource("Cpp");
-		if (runtimeSrc == null) {
+		final URL runtimeURL = loader.getResource("Cpp");
+		if (runtimeURL == null) {
 			throw new RuntimeException("Cannot find runtime");
 		}
-		return runtimeSrc.getPath();
-	}
-
-	public void testErrors(String[] pairs, boolean printTree) {
-        for (int i = 0; i < pairs.length; i+=2) {
-            String input = pairs[i];
-            String expect = pairs[i+1];
-
-			String[] lines = input.split("\n");
-			String fileName = getFilenameFromFirstLineOfGrammar(lines[0]);
-			ErrorQueue equeue = antlr(fileName, fileName, input, false);
-
-			String actual = equeue.toString(true);
-			actual = actual.replace(tmpdir + File.separator, "");
-			System.err.println(actual);
-			String msg = input;
-			msg = msg.replace("\n","\\n");
-			msg = msg.replace("\r","\\r");
-			msg = msg.replace("\t","\\t");
-
-            assertEquals("error in: "+msg,expect,actual);
-        }
-    }
-
-	public String getFilenameFromFirstLineOfGrammar(String line) {
-		String fileName = "A" + Tool.GRAMMAR_EXTENSION;
-		int grIndex = line.lastIndexOf("grammar");
-		int semi = line.lastIndexOf(';');
-		if ( grIndex>=0 && semi>=0 ) {
-			int space = line.indexOf(' ', grIndex);
-			fileName = line.substring(space+1, semi)+Tool.GRAMMAR_EXTENSION;
+		// Windows not getting runtime right. See:
+		// http://stackoverflow.com/questions/6164448/convert-url-to-normal-windows-filename-java
+		// it was coming back "/C:/projects/antlr4-l7imv/runtime-testsuite/target/classes/Cpp"
+		String p;
+		try {
+			p = Paths.get(runtimeURL.toURI()).toFile().toString();
 		}
-		if ( fileName.length()==Tool.GRAMMAR_EXTENSION.length() ) fileName = "A" + Tool.GRAMMAR_EXTENSION;
-		return fileName;
+		catch (URISyntaxException use) {
+			p = "Can't find runtime";
+		}
+		return p;
 	}
 
 	List<ANTLRMessage> getMessagesOfType(List<ANTLRMessage> msgs, Class<? extends ANTLRMessage> c) {
@@ -797,43 +750,8 @@ public abstract class BaseCppTest {
 		}
 	}
 
-	public static class StreamVacuum implements Runnable {
-		StringBuilder buf = new StringBuilder();
-		BufferedReader in;
-		Thread sucker;
-		public StreamVacuum(InputStream in) {
-			this.in = new BufferedReader( new InputStreamReader(in) );
-		}
-		public void start() {
-			sucker = new Thread(this);
-			sucker.start();
-		}
-		@Override
-		public void run() {
-			try {
-				String line = in.readLine();
-				while (line!=null) {
-					buf.append(line);
-					buf.append('\n');
-					line = in.readLine();
-				}
-			}
-			catch (IOException ioe) {
-				System.err.println("can't read output from process");
-			}
-		}
-		/** wait for the thread to finish */
-		public void join() throws InterruptedException {
-			sucker.join();
-		}
-		@Override
-		public String toString() {
-			return buf.toString();
-		}
-	}
-
 	protected void checkGrammarSemanticsError(ErrorQueue equeue,
-											  GrammarSemanticsMessage expectedMessage)
+	                                          GrammarSemanticsMessage expectedMessage)
 		throws Exception
 	{
 		ANTLRMessage foundMsg = null;
@@ -845,7 +763,7 @@ public abstract class BaseCppTest {
 		}
 		assertNotNull("no error; "+expectedMessage.getErrorType()+" expected", foundMsg);
 		assertTrue("error is not a GrammarSemanticsMessage",
-				   foundMsg instanceof GrammarSemanticsMessage);
+		           foundMsg instanceof GrammarSemanticsMessage);
 		assertEquals(Arrays.toString(expectedMessage.getArgs()), Arrays.toString(foundMsg.getArgs()));
 		if ( equeue.size()!=1 ) {
 			System.err.println(equeue);
@@ -853,7 +771,7 @@ public abstract class BaseCppTest {
 	}
 
 	protected void checkGrammarSemanticsWarning(ErrorQueue equeue,
-											    GrammarSemanticsMessage expectedMessage)
+	                                            GrammarSemanticsMessage expectedMessage)
 		throws Exception
 	{
 		ANTLRMessage foundMsg = null;
@@ -865,7 +783,7 @@ public abstract class BaseCppTest {
 		}
 		assertNotNull("no error; "+expectedMessage.getErrorType()+" expected", foundMsg);
 		assertTrue("error is not a GrammarSemanticsMessage",
-				   foundMsg instanceof GrammarSemanticsMessage);
+		           foundMsg instanceof GrammarSemanticsMessage);
 		assertEquals(Arrays.toString(expectedMessage.getArgs()), Arrays.toString(foundMsg.getArgs()));
 		if ( equeue.size()!=1 ) {
 			System.err.println(equeue);
@@ -873,7 +791,7 @@ public abstract class BaseCppTest {
 	}
 
 	protected void checkError(ErrorQueue equeue,
-							  ANTLRMessage expectedMessage)
+	                          ANTLRMessage expectedMessage)
 		throws Exception
 	{
 		//System.out.println("errors="+equeue);
@@ -894,12 +812,12 @@ public abstract class BaseCppTest {
 		assertArrayEquals(expectedMessage.getArgs(), foundMsg.getArgs());
 	}
 
-    public static class FilteringTokenStream extends CommonTokenStream {
-        public FilteringTokenStream(TokenSource src) { super(src); }
-        Set<Integer> hide = new HashSet<Integer>();
-        @Override
-        protected boolean sync(int i) {
-            if (!super.sync(i)) {
+	public static class FilteringTokenStream extends CommonTokenStream {
+		public FilteringTokenStream(TokenSource src) { super(src); }
+		Set<Integer> hide = new HashSet<Integer>();
+		@Override
+		protected boolean sync(int i) {
+			if (!super.sync(i)) {
 				return false;
 			}
 
@@ -909,24 +827,9 @@ public abstract class BaseCppTest {
 			}
 
 			return true;
-        }
-        public void setTokenTypeChannel(int ttype, int channel) {
-            hide.add(ttype);
-        }
-    }
-
-	public static void writeFile(String dir, String fileName, String content) {
-		try {
-			File f = new File(dir, fileName);
-			FileWriter w = new FileWriter(f);
-			BufferedWriter bw = new BufferedWriter(w);
-			bw.write(content);
-			bw.close();
-			w.close();
 		}
-		catch (IOException ioe) {
-			System.err.println("can't write file");
-			ioe.printStackTrace(System.err);
+		public void setTokenTypeChannel(int ttype, int channel) {
+			hide.add(ttype);
 		}
 	}
 
@@ -936,49 +839,49 @@ public abstract class BaseCppTest {
 	}
 
 	protected void writeParserTestFile(String parserName, String lexerName,
-			String listenerName, String visitorName,
-			String parserStartRuleName, boolean debug, boolean trace) {
+	                                   String listenerName, String visitorName,
+	                                   String parserStartRuleName, boolean debug, boolean trace) {
 		if(!parserStartRuleName.endsWith(")"))
 			parserStartRuleName += "()";
 		ST outputFileST = new ST(
-				"#include \\<iostream>\n"
-						+ "\n"
-						+ "#include \"antlr4-runtime.h\"\n"
-						+ "#include \"<lexerName>.h\"\n"
-						+ "#include \"<parserName>.h\"\n"
-						+ "\n"
-						+ "using namespace antlr4;\n"
-						+ "\n"
-						+ "class TreeShapeListener : public tree::ParseTreeListener {\n"
-						+ "public:\n"
-						+ "  void visitTerminal(tree::TerminalNode *) override {}\n"
-						+ "  void visitErrorNode(tree::ErrorNode *) override {}\n"
-						+ "  void exitEveryRule(ParserRuleContext *) override {}\n"
-						+ "  void enterEveryRule(ParserRuleContext *ctx) override {\n"
-						+ "    for (auto child : ctx->children) {\n"
-						+ "      tree::ParseTree *parent = child->parent;\n"
-						+ "      ParserRuleContext *rule = dynamic_cast\\<ParserRuleContext *>(parent);\n"
-						+ "      if (rule != ctx) {\n"
-						+ "        throw \"Invalid parse tree shape detected.\";\n"
-						+ "      }\n"
+			"#include \\<iostream>\n"
+				+ "\n"
+				+ "#include \"antlr4-runtime.h\"\n"
+				+ "#include \"<lexerName>.h\"\n"
+				+ "#include \"<parserName>.h\"\n"
+				+ "\n"
+				+ "using namespace antlr4;\n"
+				+ "\n"
+				+ "class TreeShapeListener : public tree::ParseTreeListener {\n"
+				+ "public:\n"
+				+ "  void visitTerminal(tree::TerminalNode *) override {}\n"
+				+ "  void visitErrorNode(tree::ErrorNode *) override {}\n"
+				+ "  void exitEveryRule(ParserRuleContext *) override {}\n"
+				+ "  void enterEveryRule(ParserRuleContext *ctx) override {\n"
+				+ "    for (auto child : ctx->children) {\n"
+				+ "      tree::ParseTree *parent = child->parent;\n"
+				+ "      ParserRuleContext *rule = dynamic_cast\\<ParserRuleContext *>(parent);\n"
+				+ "      if (rule != ctx) {\n"
+				+ "        throw \"Invalid parse tree shape detected.\";\n"
+				+ "      }\n"
 
-						+ "    }\n"
-						+ "  }\n"
-						+ "};\n"
-						+ "\n"
-						+ "\n"
-						+ "int main(int argc, const char* argv[]) {\n"
-						+ "  ANTLRFileStream input(argv[1]);\n"
-						+ "  <lexerName> lexer(&input);\n"
-						+ "  CommonTokenStream tokens(&lexer);\n"
-						+ "<createParser>"
-						+ "\n"
-						+ "  tree::ParseTree *tree = parser.<parserStartRuleName>;\n"
-						+ "  TreeShapeListener listener;\n"
-						+ "  tree::ParseTreeWalker::DEFAULT.walk(&listener, tree);\n"
-						+ "\n"
-						+ "  return 0;\n"
-						+ "}\n"
+				+ "    }\n"
+				+ "  }\n"
+				+ "};\n"
+				+ "\n"
+				+ "\n"
+				+ "int main(int argc, const char* argv[]) {\n"
+				+ "  ANTLRFileStream input(argv[1]);\n"
+				+ "  <lexerName> lexer(&input);\n"
+				+ "  CommonTokenStream tokens(&lexer);\n"
+				+ "<createParser>"
+				+ "\n"
+				+ "  tree::ParseTree *tree = parser.<parserStartRuleName>;\n"
+				+ "  TreeShapeListener listener;\n"
+				+ "  tree::ParseTreeWalker::DEFAULT.walk(&listener, tree);\n"
+				+ "\n"
+				+ "  return 0;\n"
+				+ "}\n"
 		);
 
 		String stSource = "  <parserName> parser(&tokens);\n";
@@ -1001,79 +904,80 @@ public abstract class BaseCppTest {
 	protected void writeLexerTestFile(String lexerName, boolean showDFA) {
 		ST outputFileST = new ST(
 			"#include \\<iostream>\n"
-					+ "\n"
-					+ "#include \"antlr4-runtime.h\"\n"
-					+ "#include \"<lexerName>.h\"\n"
-					+ "\n"
-					+ "#include \"support/StringUtils.h\"\n"
-					+ "\n"
-					+ "using namespace antlr4;\n"
-					+ "\n"
-					+ "int main(int argc, const char* argv[]) {\n"
-					+ "  ANTLRFileStream input(argv[1]);\n"
-					+ "  <lexerName> lexer(&input);\n"
-					+ "  CommonTokenStream tokens(&lexer);\n"
-					+ "  tokens.fill();\n"
-				    + "  for (auto token : tokens.getTokens())\n"
-				    + "    std::cout \\<\\< token->toString() \\<\\< std::endl;\n"
-					+ (showDFA ? "  std::cout \\<\\< lexer.getInterpreter\\<atn::LexerATNSimulator>()->getDFA(Lexer::DEFAULT_MODE).toLexerString();\n" : "\n")
-					+ "  return 0;\n"
-					+ "}\n");
+				+ "\n"
+				+ "#include \"antlr4-runtime.h\"\n"
+				+ "#include \"<lexerName>.h\"\n"
+				+ "\n"
+				+ "#include \"support/StringUtils.h\"\n"
+				+ "\n"
+				+ "using namespace antlr4;\n"
+				+ "\n"
+				+ "int main(int argc, const char* argv[]) {\n"
+				+ "  ANTLRFileStream input(argv[1]);\n"
+				+ "  <lexerName> lexer(&input);\n"
+				+ "  CommonTokenStream tokens(&lexer);\n"
+				+ "  tokens.fill();\n"
+				+ "  for (auto token : tokens.getTokens())\n"
+				+ "    std::cout \\<\\< token->toString() \\<\\< std::endl;\n"
+				+ (showDFA ? "  std::cout \\<\\< lexer.getInterpreter\\<atn::LexerATNSimulator>()->getDFA(Lexer::DEFAULT_MODE).toLexerString();\n" : "\n")
+				+ "  return 0;\n"
+				+ "}\n");
 		outputFileST.add("lexerName", lexerName);
 		writeFile(tmpdir, "Test.cpp", outputFileST.render());
 	}
 
 	public void writeRecognizer(String parserName, String lexerName,
-								String listenerName, String visitorName,
-								String parserStartRuleName, boolean debug, boolean trace) {
+	                            String listenerName, String visitorName,
+	                            String parserStartRuleName, boolean debug, boolean trace) {
 		if ( parserName==null ) {
 			writeLexerTestFile(lexerName, debug);
 		}
 		else {
 			writeParserTestFile(parserName,
-						  lexerName,
-						  listenerName,
-						  visitorName,
-						  parserStartRuleName,
-						  debug,
-						  trace);
+			                    lexerName,
+			                    listenerName,
+			                    visitorName,
+			                    parserStartRuleName,
+			                    debug,
+			                    trace);
 		}
 	}
 
 
-    protected void eraseFiles(final String filesEndingWith) {
-        File tmpdirF = new File(tmpdir);
-        String[] files = tmpdirF.list();
-        for(int i = 0; files!=null && i < files.length; i++) {
-            if ( files[i].endsWith(filesEndingWith) ) {
-                new File(tmpdir+"/"+files[i]).delete();
-            }
-        }
-    }
+	protected void eraseFiles(final String filesEndingWith) {
+		File tmpdirF = new File(tmpdir);
+		String[] files = tmpdirF.list();
+		for(int i = 0; files!=null && i < files.length; i++) {
+			if ( files[i].endsWith(filesEndingWith) ) {
+				new File(tmpdir+"/"+files[i]).delete();
+			}
+		}
+	}
 
-    protected void eraseFiles(File dir) {
-       String[] files = dir.list();
-        for(int i = 0; files!=null && i < files.length; i++) {
-            new File(dir,files[i]).delete();
-        }
-    }
+	protected void eraseFiles(File dir) {
+		String[] files = dir.list();
+		for(int i = 0; files!=null && i < files.length; i++) {
+			new File(dir,files[i]).delete();
+		}
+	}
 
-    protected void eraseTempDir() {
-    	boolean doErase = true;
-    	String propName = getPropertyPrefix() + "-erase-test-dir";
-    	String prop = System.getProperty(propName);
-    	if(prop!=null && prop.length()>0)
-    		doErase = Boolean.getBoolean(prop);
-        if(doErase) {
-        	File tmpdirF = new File(tmpdir);
-	        if ( tmpdirF.exists() ) {
-	            eraseFiles(tmpdirF);
-	            tmpdirF.delete();
-	        }
-        }
-    }
+	@Override
+	public void eraseTempDir() {
+		boolean doErase = true;
+		String propName = getPropertyPrefix() + "-erase-test-dir";
+		String prop = System.getProperty(propName);
+		if(prop!=null && prop.length()>0)
+			doErase = Boolean.getBoolean(prop);
+		if(doErase) {
+			File tmpdirF = new File(tmpdir);
+			if ( tmpdirF.exists() ) {
+				eraseFiles(tmpdirF);
+				tmpdirF.delete();
+			}
+		}
+	}
 
-    public String getFirstLineOfException() {
+	public String getFirstLineOfException() {
 		if ( this.stderrDuringParse ==null ) {
 			return null;
 		}
@@ -1082,33 +986,33 @@ public abstract class BaseCppTest {
 		return lines[0].substring(prefix.length(),lines[0].length());
 	}
 
-    /**
-     * When looking at a result set that consists of a Map/HashTable
-     * we cannot rely on the output order, as the hashing algorithm or other aspects
-     * of the implementation may be different on different JDKs or platforms. Hence
-     * we take the Map, convert the keys to a List, sort them and Stringify the Map, which is a
-     * bit of a hack, but guarantees that we get the same order on all systems. We assume that
-     * the keys are strings.
-     *
-     * @param m The Map that contains keys we wish to return in sorted order
-     * @return A string that represents all the keys in sorted order.
-     */
-    public <K, V> String sortMapToString(Map<K, V> m) {
-        // Pass in crap, and get nothing back
-        //
-        if  (m == null) {
-            return null;
-        }
+	/**
+	 * When looking at a result set that consists of a Map/HashTable
+	 * we cannot rely on the output order, as the hashing algorithm or other aspects
+	 * of the implementation may be different on different JDKs or platforms. Hence
+	 * we take the Map, convert the keys to a List, sort them and Stringify the Map, which is a
+	 * bit of a hack, but guarantees that we get the same order on all systems. We assume that
+	 * the keys are strings.
+	 *
+	 * @param m The Map that contains keys we wish to return in sorted order
+	 * @return A string that represents all the keys in sorted order.
+	 */
+	public <K, V> String sortMapToString(Map<K, V> m) {
+		// Pass in crap, and get nothing back
+		//
+		if  (m == null) {
+			return null;
+		}
 
-        System.out.println("Map toString looks like: " + m.toString());
+		System.out.println("Map toString looks like: " + m.toString());
 
-        // Sort the keys in the Map
-        //
-        TreeMap<K, V> nset = new TreeMap<K, V>(m);
+		// Sort the keys in the Map
+		//
+		TreeMap<K, V> nset = new TreeMap<K, V>(m);
 
-        System.out.println("Tree map looks like: " + nset.toString());
-        return nset.toString();
-    }
+		System.out.println("Tree map looks like: " + nset.toString());
+		return nset.toString();
+	}
 
 	public List<String> realElements(List<String> elements) {
 		return elements.subList(Token.MIN_USER_TOKEN_TYPE, elements.size());

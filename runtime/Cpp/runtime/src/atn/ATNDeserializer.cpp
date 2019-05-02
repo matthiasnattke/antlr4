@@ -1,32 +1,6 @@
-﻿/*
- * [The "BSD license"]
- *  Copyright (c) 2016 Mike Lischke
- *  Copyright (c) 2013 Terence Parr
- *  Copyright (c) 2013 Dan McLaughlin
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *  1. Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- *  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- *  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- *  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+﻿/* Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+ * Use of this file is governed by the BSD 3-clause license that
+ * can be found in the LICENSE.txt file in the project root.
  */
 
 #include "atn/ATNDeserializationOptions.h"
@@ -77,16 +51,66 @@
 
 #include "atn/ATNDeserializer.h"
 
+#include <string>
+
 using namespace antlr4;
 using namespace antlr4::atn;
 using namespace antlrcpp;
 
 const size_t ATNDeserializer::SERIALIZED_VERSION = 3;
 
+namespace {
+
+uint32_t deserializeInt32(const std::vector<uint16_t>& data, size_t offset) {
+  return (uint32_t)data[offset] | ((uint32_t)data[offset + 1] << 16);
+}
+
+ssize_t readUnicodeInt(const std::vector<uint16_t>& data, int& p) {
+  return static_cast<ssize_t>(data[p++]);
+}
+
+ssize_t readUnicodeInt32(const std::vector<uint16_t>& data, int& p) {
+  auto result = deserializeInt32(data, p);
+  p += 2;
+  return static_cast<ssize_t>(result);
+}
+
+// We templatize this on the function type so the optimizer can inline
+// the 16- or 32-bit readUnicodeInt/readUnicodeInt32 as needed.
+template <typename F>
+void deserializeSets(
+  const std::vector<uint16_t>& data,
+  int& p,
+  std::vector<misc::IntervalSet>& sets,
+  F readUnicode) {
+  int nsets = data[p++];
+  for (int i = 0; i < nsets; i++) {
+    int nintervals = data[p++];
+    misc::IntervalSet set;
+
+    bool containsEof = data[p++] != 0;
+    if (containsEof) {
+      set.add(-1);
+    }
+
+    for (int j = 0; j < nintervals; j++) {
+      auto a = readUnicode(data, p);
+      auto b = readUnicode(data, p);
+      set.add(a, b);
+    }
+    sets.push_back(set);
+  }
+}
+
+}
+
 ATNDeserializer::ATNDeserializer(): ATNDeserializer(ATNDeserializationOptions::getDefaultOptions()) {
 }
 
 ATNDeserializer::ATNDeserializer(const ATNDeserializationOptions& dso): deserializationOptions(dso) {
+}
+
+ATNDeserializer::~ATNDeserializer() {
 }
 
 /**
@@ -101,8 +125,12 @@ Guid ATNDeserializer::ADDED_LEXER_ACTIONS() {
   return Guid("AADB8D7E-AEEF-4415-AD2B-8204D6CF042E");
 }
 
+Guid ATNDeserializer::ADDED_UNICODE_SMP() {
+  return Guid("59627784-3BE5-417A-B9EB-8131A7286089");
+}
+
 Guid ATNDeserializer::SERIALIZED_UUID() {
-  return ADDED_LEXER_ACTIONS();
+  return ADDED_UNICODE_SMP();
 }
 
 Guid ATNDeserializer::BASE_SERIALIZED_UUID() {
@@ -110,7 +138,7 @@ Guid ATNDeserializer::BASE_SERIALIZED_UUID() {
 }
 
 std::vector<Guid>& ATNDeserializer::SUPPORTED_UUIDS() {
-  static std::vector<Guid> singleton = { BASE_SERIALIZED_UUID(), ADDED_PRECEDENCE_TRANSITIONS(), ADDED_LEXER_ACTIONS() };
+  static std::vector<Guid> singleton = { BASE_SERIALIZED_UUID(), ADDED_PRECEDENCE_TRANSITIONS(), ADDED_LEXER_ACTIONS(), ADDED_UNICODE_SMP() };
   return singleton;
 }
 
@@ -265,21 +293,14 @@ ATN ATNDeserializer::deserialize(const std::vector<uint16_t>& input) {
   // SETS
   //
   std::vector<misc::IntervalSet> sets;
-  int nsets = data[p++];
-  for (int i = 0; i < nsets; i++) {
-    int nintervals = data[p++];
-    misc::IntervalSet set;
 
-    bool containsEof = data[p++] != 0;
-    if (containsEof) {
-      set.add(-1);
-    }
+  // First, deserialize sets with 16-bit arguments <= U+FFFF.
+  deserializeSets(data, p, sets, readUnicodeInt);
 
-    for (int j = 0; j < nintervals; j++) {
-      set.add(data[p], data[p + 1], true);
-      p += 2;
-    }
-    sets.push_back(set);
+  // Next, if the ATN was serialized with the Unicode SMP feature,
+  // deserialize sets with 32-bit arguments <= U+10FFFF.
+  if (isFeatureSupported(ADDED_UNICODE_SMP(), uuid)) {
+    deserializeSets(data, p, sets, readUnicodeInt32);
   }
 
   //
@@ -617,7 +638,7 @@ Guid ATNDeserializer::toUUID(const unsigned short *data, size_t offset) {
 Transition *ATNDeserializer::edgeFactory(const ATN &atn, size_t type, size_t /*src*/, size_t trg, size_t arg1,
                                          size_t arg2, size_t arg3,
   const std::vector<misc::IntervalSet> &sets) {
-  
+
   ATNState *target = atn.states[trg];
   switch (type) {
     case Transition::EPSILON:
@@ -731,6 +752,7 @@ Ref<LexerAction> ATNDeserializer::lexerActionFactory(LexerActionType type, int d
       return std::make_shared<LexerTypeAction>(data1);
 
     default:
-      throw IllegalArgumentException("The specified lexer action type " + std::to_string((size_t)type) + " is not valid.");
+      throw IllegalArgumentException("The specified lexer action type " + std::to_string(static_cast<size_t>(type)) +
+                                     " is not valid.");
   }
 }

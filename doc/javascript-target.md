@@ -15,7 +15,7 @@ The tests were conducted using Selenium. No issue was found, so you should find 
 
 ## Is NodeJS supported?
 
-The runtime has also been extensively tested against Node.js 0.10.33. No issue was found.
+The runtime has also been extensively tested against Node.js 0.12.7. No issue was found.
 
 ## How to create a JavaScript lexer or parser?
 
@@ -31,7 +31,9 @@ For a full list of antlr4 tool options, please visit the [tool documentation pag
 
 Once you've generated the lexer and/or parser code, you need to download the runtime.
 
-The JavaScript runtime is available from the ANTLR web site [download section](http://www.antlr.org/download/index.html). The runtime is provided in the form of source code, so no additional installation is required.
+The JavaScript runtime is [available from npm](https://www.npmjs.com/package/antlr4).
+
+If you can't use npm, the JavaScript runtime is also available from the ANTLR web site [download section](http://www.antlr.org/download/index.html). The runtime is provided in the form of source code, so no additional installation is required.
 
 We will not document here how to refer to the runtime from your project, since this would differ a lot depending on your project type and IDE. 
 
@@ -47,11 +49,28 @@ However, it would be a bit of a problem when it comes to get it into a browser. 
 <script src='lib/myscript.js'>
 ```
 
-In order to avoid having to do this, and also to have the exact same code for browsers and Node.js, we rely on a script which provides the equivalent of the Node.js 'require' function.
+To avoid having doing this, the preferred approach is to bundle antlr4 with your parser code, using webpack.
 
-This script is provided by Torben Haase, and is NOT part of ANTLR JavaScript runtime, although the runtime heavily relies on it. Please note that syntax for 'require' in NodeJS is different from the one implemented by RequireJS and similar frameworks.  
+You can get [information on webpack here](https://webpack.github.io).
 
-So in short, assuming you have at the root of your web site, both the 'antlr4' directory and a 'lib' directory with 'require.js' inside it, all you need to put in your HTML header is the following:
+The steps to create your parsing code are the following:
+ - generate your lexer, parser, listener and visitor using the antlr tool
+ - write your parse tree handling code by providig your custom listener or visitor, and associated code, using 'require' to load antlr.
+ - create an index.js file with the entry point to your parsing code (or several if required).
+ - test your parsing logic thoroughly using node.js
+ 
+You are now ready to bundle your parsing code as follows:
+ - following webpack specs, create a webpack.config file
+ - in the webpack.config file, exclude node.js only modules using: node: { module: "empty", net: "empty", fs: "empty" }
+ - from the cmd line, navigate to the directory containing webpack.config and type: webpack
+ 
+This will produce a single js file containing all your parsing code. Easy to include in your web pages!
+
+If you can't use webpack, you can use the lib/require.js script which implements the Node.js 'require' function in brwsers.
+
+This script is provided by Torben Haase, and is NOT part of ANTLR JavaScript runtime.   
+
+Assuming you have, at the root of your web site, both the 'antlr4' directory and a 'lib' directory with 'require.js' inside it, all you need to put in your HTML header is the following:
 
 ```xml
 <script src='lib/require.js'>
@@ -62,16 +81,6 @@ So in short, assuming you have at the root of your web site, both the 'antlr4' d
 
 This will load the runtime asynchronously.
 
-## How do I get the runtime in Node.js?
-
-Right now, there is no npm package available, so you need to register a link instead. This can be done by running the following command from the antlr4 directory:
-
-```bash
-$ npm link antlr4
-```
-
-This will install antlr4 using the package.son descriptor that comes with the script.
- 
 ## How do I run the generated lexer and/or parser?
 
 Let's suppose that your grammar is named, as above, "MyGrammar". Let's suppose this parser comprises a rule named "StartRule". The tool will have generated for you the following files:
@@ -86,11 +95,16 @@ Let's suppose that your grammar is named, as above, "MyGrammar". Let's suppose t
 Now a fully functioning script might look like the following:
 
 ```javascript
+   var antlr4 = require('antlr4');
+   var MyGrammarLexer = require('./MyGrammarLexer').MyGrammarLexer;
+   var MyGrammarParser = require('./MyGrammarParser').MyGrammarParser;
+   var MyGrammarListener = require('./MyGrammarListener').MyGrammarListener;
+
    var input = "your text to parse here"
    var chars = new antlr4.InputStream(input);
-   var lexer = new MyGrammarLexer.MyGrammarLexer(chars);
+   var lexer = new MyGrammarLexer(chars);
    var tokens  = new antlr4.CommonTokenStream(lexer);
-   var parser = new MyGrammarParser.MyGrammarParser(tokens);
+   var parser = new MyGrammarParser(tokens);
    parser.buildParseTrees = true;
    var tree = parser.MyStartRule();
 ```
@@ -103,6 +117,44 @@ This program will work. But it won't be useful unless you do one of the followin
  
 (please note that production code is target specific, so you can't have multi target grammars that include production code)
  
+## How do I create and run a visitor?
+```javascript
+// test.js
+var antlr4 = require('antlr4');
+var MyGrammarLexer = require('./QueryLexer').QueryLexer;
+var MyGrammarParser = require('./QueryParser').QueryParser;
+var MyGrammarListener = require('./QueryListener').QueryListener;
+
+
+var input = "field = 123 AND items in (1,2,3)"
+var chars = new antlr4.InputStream(input);
+var lexer = new MyGrammarLexer(chars);
+var tokens = new antlr4.CommonTokenStream(lexer);
+var parser = new MyGrammarParser(tokens);
+parser.buildParseTrees = true;
+var tree = parser.query();
+
+class Visitor {
+  visitChildren(ctx) {
+    if (!ctx) {
+      return;
+    }
+
+    if (ctx.children) {
+      return ctx.children.map(child => {
+        if (child.children && child.children.length != 0) {
+          return child.accept(this);
+        } else {
+          return child.getText();
+        }
+      });
+    }
+  }
+}
+
+tree.accept(new Visitor());
+````
+
 ## How do I create and run a custom listener?
 
 Let's suppose your MyGrammar grammar comprises 2 rules: "key" and "value". The antlr4 tool will have generated the following listener: 
@@ -119,31 +171,35 @@ Let's suppose your MyGrammar grammar comprises 2 rules: "key" and "value". The a
 ```
 
 In order to provide custom behavior, you might want to create the following class:
-  
+
 ```javascript
-    KeyPrinter = function() {
-         MyGrammarListener.call(this); // inherit default listener
-         return this;
-    };
- 
-// inherit default listener
+var KeyPrinter = function() {
+    MyGrammarListener.call(this); // inherit default listener
+    return this;
+};
+
+// continue inheriting default listener
 KeyPrinter.prototype = Object.create(MyGrammarListener.prototype);
 KeyPrinter.prototype.constructor = KeyPrinter;
- 
+
 // override default listener behavior
-       KeyPrinter.prototype.exitKey = function(ctx) {      
-       console.log("Oh, a key!");
-   }; 
+KeyPrinter.prototype.exitKey = function(ctx) {
+    console.log("Oh, a key!");
+};
 ```
 
 In order to execute this listener, you would simply add the following lines to the above code:
- 
+
 ```javascript
-        ...
-       tree = parser.StartRule() - only repeated here for reference
-   var printer = new KeyPrinter();
- antlr4.tree.ParseTreeWalker.DEFAULT.walk(printer, tree);
+    ...
+    tree = parser.StartRule() // only repeated here for reference
+var printer = new KeyPrinter();
+antlr4.tree.ParseTreeWalker.DEFAULT.walk(printer, tree);
 ```
+
+## What about TypeScript?
+
+We currently do not have a TypeScript target, but Sam Harwell is [working on a port](https://github.com/tunnelvisionlabs/antlr4ts). [Here](https://github.com/ChuckJonas/extract-interface-ts) is Section 4.3 of [ANTLR 4 book](http://a.co/5jUJYmh) converted to typescript.
 
 ## How do I integrate my parser with ACE editor?
 

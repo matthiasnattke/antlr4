@@ -1,60 +1,36 @@
-﻿/*
- * [The "BSD license"]
- *  Copyright (c) 2016 Mike Lischke
- *  Copyright (c) 2013 Terence Parr
- *  Copyright (c) 2013 Dan McLaughlin
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *  1. Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- *  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- *  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- *  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+﻿/* Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+ * Use of this file is governed by the BSD 3-clause license that
+ * can be found in the LICENSE.txt file in the project root.
  */
 
 #include "Exceptions.h"
 #include "misc/Interval.h"
 #include "Token.h"
 #include "TokenStream.h"
-#include "support/CPPUtils.h"
 
 #include "TokenStreamRewriter.h"
 
 using namespace antlr4;
-using namespace antlrcpp;
 
 using antlr4::misc::Interval;
 
-TokenStreamRewriter::RewriteOperation::RewriteOperation(TokenStreamRewriter *outerInstance, size_t index)
-  : outerInstance(outerInstance) {
+TokenStreamRewriter::RewriteOperation::RewriteOperation(TokenStreamRewriter *outerInstance_, size_t index_)
+  : outerInstance(outerInstance_) {
 
   InitializeInstanceFields();
-  this->index = index;
+  this->index = index_;
 }
 
-TokenStreamRewriter::RewriteOperation::RewriteOperation(TokenStreamRewriter *outerInstance, size_t index,
-  const std::string& text) : outerInstance(outerInstance) {
+TokenStreamRewriter::RewriteOperation::RewriteOperation(TokenStreamRewriter *outerInstance_, size_t index_,
+  const std::string& text_) : outerInstance(outerInstance_) {
 
   InitializeInstanceFields();
-  this->index = index;
-  this->text = text;
+  this->index = index_;
+  this->text = text_;
+}
+
+TokenStreamRewriter::RewriteOperation::~RewriteOperation()
+{
 }
 
 size_t TokenStreamRewriter::RewriteOperation::execute(std::string * /*buf*/) {
@@ -73,8 +49,8 @@ void TokenStreamRewriter::RewriteOperation::InitializeInstanceFields() {
   index = 0;
 }
 
-TokenStreamRewriter::InsertBeforeOp::InsertBeforeOp(TokenStreamRewriter *outerInstance, size_t index, const std::string& text)
-: RewriteOperation(outerInstance, index, text), outerInstance(outerInstance) {
+TokenStreamRewriter::InsertBeforeOp::InsertBeforeOp(TokenStreamRewriter *outerInstance_, size_t index_, const std::string& text_)
+: RewriteOperation(outerInstance_, index_, text_), outerInstance(outerInstance_) {
 }
 
 size_t TokenStreamRewriter::InsertBeforeOp::execute(std::string *buf) {
@@ -85,7 +61,8 @@ size_t TokenStreamRewriter::InsertBeforeOp::execute(std::string *buf) {
   return index + 1;
 }
 
-TokenStreamRewriter::ReplaceOp::ReplaceOp(TokenStreamRewriter *outerInstance, size_t from, size_t to, const std::string& text) : RewriteOperation(outerInstance, from, text), outerInstance(outerInstance) {
+TokenStreamRewriter::ReplaceOp::ReplaceOp(TokenStreamRewriter *outerInstance_, size_t from, size_t to, const std::string& text)
+: RewriteOperation(outerInstance_, from, text), outerInstance(outerInstance_) {
 
   InitializeInstanceFields();
   lastIndex = to;
@@ -111,8 +88,8 @@ void TokenStreamRewriter::ReplaceOp::InitializeInstanceFields() {
 
 const std::string TokenStreamRewriter::DEFAULT_PROGRAM_NAME = "default";
 
-TokenStreamRewriter::TokenStreamRewriter(TokenStream *tokens) : tokens(tokens) {
-  _programs.insert({ DEFAULT_PROGRAM_NAME, std::vector<RewriteOperation*>(PROGRAM_INIT_SIZE) });
+TokenStreamRewriter::TokenStreamRewriter(TokenStream *tokens_) : tokens(tokens_) {
+  _programs[DEFAULT_PROGRAM_NAME].reserve(PROGRAM_INIT_SIZE);
 }
 
 TokenStreamRewriter::~TokenStreamRewriter() {
@@ -230,11 +207,13 @@ void TokenStreamRewriter::Delete(Token *from, Token *to) {
 }
 
 void TokenStreamRewriter::Delete(const std::string &programName, size_t from, size_t to) {
-  replace(programName, from, to, nullptr);
+  std::string nullString;
+  replace(programName, from, to, nullString);
 }
 
 void TokenStreamRewriter::Delete(const std::string &programName, Token *from, Token *to) {
-  replace(programName, from, to, nullptr);
+  std::string nullString;
+  replace(programName, from, to, nullString);
 }
 
 size_t TokenStreamRewriter::getLastRewriteTokenIndex() {
@@ -253,17 +232,16 @@ void TokenStreamRewriter::setLastRewriteTokenIndex(const std::string &programNam
 }
 
 std::vector<TokenStreamRewriter::RewriteOperation*>& TokenStreamRewriter::getProgram(const std::string &name) {
-  std::vector<TokenStreamRewriter::RewriteOperation*> &is = _programs[name];
-  if (is.empty()) {
-    is = initializeProgram(name);
+  auto iterator = _programs.find(name);
+  if (iterator == _programs.end()) {
+    return initializeProgram(name);
   }
-  return is;
+  return iterator->second;
 }
 
-std::vector<TokenStreamRewriter::RewriteOperation*> TokenStreamRewriter::initializeProgram(const std::string &name) {
-  std::vector<TokenStreamRewriter::RewriteOperation*> is(PROGRAM_INIT_SIZE);
-  _programs.insert({ name, is });
-  return is;
+std::vector<TokenStreamRewriter::RewriteOperation*>& TokenStreamRewriter::initializeProgram(const std::string &name) {
+  _programs[name].reserve(PROGRAM_INIT_SIZE);
+  return _programs[name];
 }
 
 std::string TokenStreamRewriter::getText() {
@@ -279,7 +257,7 @@ std::string TokenStreamRewriter::getText(const Interval &interval) {
 }
 
 std::string TokenStreamRewriter::getText(const std::string &programName, const Interval &interval) {
-  std::vector<TokenStreamRewriter::RewriteOperation*> rewrites = _programs[programName];
+  std::vector<TokenStreamRewriter::RewriteOperation*> &rewrites = _programs[programName];
   size_t start = interval.a;
   size_t stop = interval.b;
 
@@ -333,39 +311,38 @@ std::string TokenStreamRewriter::getText(const std::string &programName, const I
 }
 
 std::unordered_map<size_t, TokenStreamRewriter::RewriteOperation*> TokenStreamRewriter::reduceToSingleOperationPerIndex(
-  std::vector<TokenStreamRewriter::RewriteOperation*> rewrites) {
+  std::vector<TokenStreamRewriter::RewriteOperation*> &rewrites) {
+
 
   // WALK REPLACES
   for (size_t i = 0; i < rewrites.size(); ++i) {
     TokenStreamRewriter::RewriteOperation *op = rewrites[i];
-    if (op == nullptr) {
+    ReplaceOp *rop = dynamic_cast<ReplaceOp *>(op);
+    if (rop == nullptr)
       continue;
-    }
-    if (!is<ReplaceOp *>(op)) {
-      continue;
-    }
-    ReplaceOp *rop = static_cast<ReplaceOp*>(op);
+
     // Wipe prior inserts within range
-    InsertBeforeOp* type = nullptr;
-    std::vector<InsertBeforeOp*> inserts = getKindOfOps(rewrites, type, i);
+    std::vector<InsertBeforeOp *> inserts = getKindOfOps<InsertBeforeOp>(rewrites, i);
     for (auto iop : inserts) {
       if (iop->index == rop->index) {
         // E.g., insert before 2, delete 2..2; update replace
         // text to include insert before, kill insert
+        delete rewrites[iop->instructionIndex];
         rewrites[iop->instructionIndex] = nullptr;
         rop->text = iop->text + (!rop->text.empty() ? rop->text : "");
       }
       else if (iop->index > rop->index && iop->index <= rop->lastIndex) {
         // delete insert as it's a no-op.
+        delete rewrites[iop->instructionIndex];
         rewrites[iop->instructionIndex] = nullptr;
       }
     }
     // Drop any prior replaces contained within
-    ReplaceOp* type2 = nullptr;
-    std::vector<ReplaceOp*> prevReplaces = getKindOfOps(rewrites, type2, i);
+    std::vector<ReplaceOp*> prevReplaces = getKindOfOps<ReplaceOp>(rewrites, i);
     for (auto prevRop : prevReplaces) {
       if (prevRop->index >= rop->index && prevRop->lastIndex <= rop->lastIndex) {
         // delete replace as it's a no-op.
+        delete rewrites[prevRop->instructionIndex];
         rewrites[prevRop->instructionIndex] = nullptr;
         continue;
       }
@@ -375,7 +352,7 @@ std::unordered_map<size_t, TokenStreamRewriter::RewriteOperation*> TokenStreamRe
       // Delete special case of replace (text==null):
       // D.i-j.u D.x-y.v    | boundaries overlap    combine to max(min)..max(right)
       if (prevRop->text.empty() && rop->text.empty() && !disjoint) {
-        //System.out.println("overlapping deletes: "+prevRop+", "+rop);
+        delete rewrites[prevRop->instructionIndex];
         rewrites[prevRop->instructionIndex] = nullptr; // kill first delete
         rop->index = std::min(prevRop->index, rop->index);
         rop->lastIndex = std::max(prevRop->lastIndex, rop->lastIndex);
@@ -390,32 +367,29 @@ std::unordered_map<size_t, TokenStreamRewriter::RewriteOperation*> TokenStreamRe
 
   // WALK INSERTS
   for (size_t i = 0; i < rewrites.size(); i++) {
-    RewriteOperation *op = rewrites[i];
-    if (op == nullptr) {
+    InsertBeforeOp *iop = dynamic_cast<InsertBeforeOp *>(rewrites[i]);
+    if (iop == nullptr)
       continue;
-    }
-    if (!is<InsertBeforeOp*>(op)) {
-      continue;
-    }
-    InsertBeforeOp *iop = static_cast<InsertBeforeOp*>(rewrites[i]);
+
     // combine current insert with prior if any at same index
 
-    std::vector<InsertBeforeOp*> prevInserts = getKindOfOps(rewrites, iop, i);
+    std::vector<InsertBeforeOp *> prevInserts = getKindOfOps<InsertBeforeOp>(rewrites, i);
     for (auto prevIop : prevInserts) {
       if (prevIop->index == iop->index) { // combine objects
                                           // convert to strings...we're in process of toString'ing
                                           // whole token buffer so no lazy eval issue with any templates
         iop->text = catOpText(&iop->text, &prevIop->text);
         // delete redundant prior insert
+        delete rewrites[prevIop->instructionIndex];
         rewrites[prevIop->instructionIndex] = nullptr;
       }
     }
     // look for replaces where iop.index is in range; error
-    ReplaceOp *type = nullptr;
-    std::vector<ReplaceOp*> prevReplaces = getKindOfOps(rewrites, type, i);
+    std::vector<ReplaceOp*> prevReplaces = getKindOfOps<ReplaceOp>(rewrites, i);
     for (auto rop : prevReplaces) {
       if (iop->index == rop->index) {
         rop->text = catOpText(&iop->text, &rop->text);
+        delete rewrites[i];
         rewrites[i] = nullptr; // delete current insert
         continue;
       }
@@ -443,10 +417,10 @@ std::string TokenStreamRewriter::catOpText(std::string *a, std::string *b) {
   std::string x = "";
   std::string y = "";
   if (a != nullptr) {
-    x = std::string(*a);
+    x = *a;
   }
   if (b != nullptr) {
-    y = std::string(*b);
+    y = *b;
   }
   return x + y;
 }

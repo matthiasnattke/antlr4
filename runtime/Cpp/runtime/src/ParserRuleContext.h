@@ -1,32 +1,6 @@
-﻿/*
- * [The "BSD license"]
- *  Copyright (c) 2016 Mike Lischke
- *  Copyright (c) 2013 Terence Parr
- *  Copyright (c) 2013 Dan McLaughlin
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *  1. Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- *  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- *  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- *  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+﻿/* Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+ * Use of this file is governed by the BSD 3-clause license that
+ * can be found in the LICENSE.txt file in the project root.
  */
 
 #pragma once
@@ -96,7 +70,8 @@ namespace antlr4 {
     virtual ~ParserRuleContext() {}
 
     /** COPY a ctx (I'm deliberately not using copy constructor) to avoid
-     *  confusion with creating node with parent. Does not copy children.
+     *  confusion with creating node with parent. Does not copy children
+     *  (except error leaves).
      */
     virtual void copyFrom(ParserRuleContext *ctx);
 
@@ -106,7 +81,7 @@ namespace antlr4 {
     virtual void enterRule(tree::ParseTreeListener *listener);
     virtual void exitRule(tree::ParseTreeListener *listener);
 
-    /// Does not set parent link; other add methods do that.
+    /** Add a token leaf node child and force its parent to be this node. */
     tree::TerminalNode* addChild(tree::TerminalNode *t);
     RuleContext* addChild(RuleContext *ruleInvocation);
 
@@ -114,9 +89,6 @@ namespace antlr4 {
     /// we entered a rule. If we have # label, we will need to remove
     /// generic ruleContext object.
     virtual void removeLastChild();
-
-    virtual tree::TerminalNode* addChild(tree::ParseTreeTracker &tracker, Token *matchedToken);
-    virtual tree::ErrorNode* addErrorNode(tree::ParseTreeTracker &tracker, Token *badToken);
 
     virtual tree::TerminalNode* getToken(size_t ttype, std::size_t i);
 
@@ -158,14 +130,14 @@ namespace antlr4 {
      * Note that the range from start to stop is inclusive, so for rules that do not consume anything
      * (for example, zero length or error productions) this token may exceed stop.
      */
-    virtual Token*getStart();
+    virtual Token *getStart();
 
     /**
      * Get the final token in this context.
      * Note that the range from start to stop is inclusive, so for rules that do not consume anything
      * (for example, zero length or error productions) this token may precede start.
      */
-    virtual Token* getStop();
+    virtual Token *getStop();
 
     /// <summary>
     /// Used for rule context info debugging during parse-time, not so much for ATN debugging </summary>

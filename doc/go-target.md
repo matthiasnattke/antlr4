@@ -13,7 +13,7 @@ Each target language for ANTLR has a runtime package for running parser generate
 Get the runtime and install it on your GOPATH:
 
 ```bash
-go get github.com/antlr/antlr4
+go get github.com/antlr/antlr4/runtime/Go/antlr
 ```
 
 #### 3. Set the release tag (optional)
@@ -88,7 +88,7 @@ func (this *TreeShapeListener) EnterEveryRule(ctx antlr.ParserRuleContext) {
 }
 
 func main() {
-	input := antlr.NewFileStream(os.Args[1])
+	input, _ := antlr.NewFileStream(os.Args[1])
 	lexer := parser.NewJSONLexer(input)
 	stream := antlr.NewCommonTokenStream(lexer,0)
 	p := parser.NewJSONParser(stream)

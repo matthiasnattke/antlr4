@@ -1,3 +1,8 @@
+#
+# Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+# Use of this file is governed by the BSD 3-clause license that
+# can be found in the LICENSE.txt file in the project root.
+#
 
 #
 # Represent a subset of XPath XML path syntax for use in identifying nodes in
@@ -114,7 +119,7 @@ class XPathLexer(Lexer):
 
     def __init__(self, input=None):
         super().__init__(input)
-        self.checkVersion("4.6")
+        self.checkVersion("4.7.2")
         self._interp = LexerATNSimulator(self, self.atn, self.decisionsToDFA, PredictionContextCache())
         self._actions = None
         self._predicates = None

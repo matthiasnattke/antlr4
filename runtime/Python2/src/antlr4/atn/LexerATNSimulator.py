@@ -1,32 +1,7 @@
 #
-# [The "BSD license"]
-#  Copyright (c) 2012 Terence Parr
-#  Copyright (c) 2012 Sam Harwell
-#  Copyright (c) 2014 Eric Vergnaud
-#  All rights reserved.
-#
-#  Redistribution and use in source and binary forms, with or without
-#  modification, are permitted provided that the following conditions
-#  are met:
-#
-#  1. Redistributions of source code must retain the above copyright
-#     notice, this list of conditions and the following disclaimer.
-#  2. Redistributions in binary form must reproduce the above copyright
-#     notice, this list of conditions and the following disclaimer in the
-#     documentation and/or other materials provided with the distribution.
-#  3. The name of the author may not be used to endorse or promote products
-#     derived from this software without specific prior written permission.
-#
-#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
-#  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-#  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
-#  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
-#  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
-#  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-#  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-#  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-#  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
-#  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+# Use of this file is governed by the BSD 3-clause license that
+# can be found in the LICENSE.txt file in the project root.
 #/
 
 # When we hit an accept state in either the DFA or the ATN, we
@@ -69,7 +44,7 @@ class SimState(object):
         self.dfaState = None
 
 class LexerATNSimulator(ATNSimulator):
-    
+
     debug = False
     dfa_debug = False
 
@@ -310,7 +285,7 @@ class LexerATNSimulator(ATNSimulator):
             lexerActionExecutor.execute(self.recog, input, startIndex)
 
     def getReachableTarget(self, trans, t):
-        if trans.matches(t, 0, 0xFFFE):
+        if trans.matches(t, 0, Lexer.MAX_CHAR_VALUE):
             return trans.target
         else:
             return None
@@ -437,7 +412,7 @@ class LexerATNSimulator(ATNSimulator):
 
         elif t.serializationType in [ Transition.ATOM, Transition.RANGE, Transition.SET ]:
             if treatEofAsEpsilon:
-                if t.matches(Token.EOF, 0, 0xFFFF):
+                if t.matches(Token.EOF, 0, Lexer.MAX_CHAR_VALUE):
                     c = LexerATNConfig(state=t.target, config=config)
 
         return c

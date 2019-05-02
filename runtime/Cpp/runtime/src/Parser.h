@@ -1,32 +1,6 @@
-﻿/*
- * [The "BSD license"]
- *  Copyright (c) 2016 Mike Lischke
- *  Copyright (c) 2013 Terence Parr
- *  Copyright (c) 2013 Dan McLaughlin
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *  1. Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- *  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- *  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- *  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+﻿/* Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+ * Use of this file is governed by the BSD 3-clause license that
+ * can be found in the LICENSE.txt file in the project root.
  */
 
 #pragma once
@@ -47,7 +21,7 @@ namespace antlr4 {
     class TraceListener : public tree::ParseTreeListener {
     public:
       TraceListener(Parser *outerInstance);
-      virtual ~TraceListener() {};
+      virtual ~TraceListener();
 
       virtual void enterEveryRule(ParserRuleContext *ctx) override;
       virtual void visitTerminal(tree::TerminalNode *node) override;
@@ -62,7 +36,7 @@ namespace antlr4 {
     public:
       static TrimToSizeListener INSTANCE;
 
-      virtual ~TrimToSizeListener() {};
+      virtual ~TrimToSizeListener();
 
       virtual void enterEveryRule(ParserRuleContext *ctx) override;
       virtual void visitTerminal(tree::TerminalNode *node) override;
@@ -80,13 +54,14 @@ namespace antlr4 {
     /// Match current input symbol against {@code ttype}. If the symbol type
     /// matches, <seealso cref="ANTLRErrorStrategy#reportMatch"/> and <seealso cref="#consume"/> are
     /// called to complete the match process.
-    /// <p/>
+    ///
     /// If the symbol type does not match,
     /// <seealso cref="ANTLRErrorStrategy#recoverInline"/> is called on the current error
     /// strategy to attempt recovery. If <seealso cref="#getBuildParseTree"/> is
     /// {@code true} and the token index of the symbol returned by
     /// <seealso cref="ANTLRErrorStrategy#recoverInline"/> is -1, the symbol is added to
-    /// the parse tree by calling <seealso cref="ParserRuleContext#addErrorNode"/>.
+    /// the parse tree by calling {@link #createErrorNode(ParserRuleContext, Token)} then
+    /// {@link ParserRuleContext#addErrorNode(ErrorNode)}.
     /// </summary>
     /// <param name="ttype"> the token type to match </param>
     /// <returns> the matched symbol </returns>
@@ -198,7 +173,7 @@ namespace antlr4 {
     /// </summary>
     /// <seealso cref= #addParseListener </seealso>
     virtual void removeParseListeners();
-    
+
     /// <summary>
     /// Notify any parse listeners of an enter rule event.
     /// </summary>
@@ -210,7 +185,7 @@ namespace antlr4 {
     /// </summary>
     /// <seealso cref= #addParseListener </seealso>
     virtual void triggerExitRuleEvent();
-    
+
     /// <summary>
     /// Gets the number of syntax errors reported during parsing. This value is
     /// incremented each time <seealso cref="#notifyErrorListeners"/> is called.
@@ -284,11 +259,11 @@ namespace antlr4 {
     /// </pre>
     ///
     /// If the parser is not in error recovery mode, the consumed symbol is added
-    /// to the parse tree using <seealso cref="ParserRuleContext#addChild(Token)"/>, and
+    /// to the parse tree using <seealso cref="ParserRuleContext#addChild(TerminalNode)"/>, and
     /// <seealso cref="ParseTreeListener#visitTerminal"/> is called on any parse listeners.
     /// If the parser <em>is</em> in error recovery mode, the consumed symbol is
-    /// added to the parse tree using
-    /// <seealso cref="ParserRuleContext#addErrorNode(Token)"/>, and
+    /// added to the parse tree using {@link #createErrorNode(ParserRuleContext, Token)} then
+    /// {@link ParserRuleContext#addErrorNode(ErrorNode)} and
     /// <seealso cref="ParseTreeListener#visitErrorNode"/> is called on any parse
     /// listeners.
     virtual Token* consume();
@@ -297,7 +272,7 @@ namespace antlr4 {
     /// <seealso cref="#_ctx"/> get the current context.
     virtual void enterRule(ParserRuleContext *localctx, size_t state, size_t ruleIndex);
 
-    virtual void exitRule();
+    void exitRule();
 
     virtual void enterOuterAlt(ParserRuleContext *localctx, size_t altNum);
 
@@ -380,18 +355,18 @@ namespace antlr4 {
     virtual std::string getSourceName();
 
     atn::ParseInfo getParseInfo() const;
-    
+
     /**
      * @since 4.3
      */
     void setProfile(bool profile);
-    
+
     /// <summary>
     /// During a parse is sometimes useful to listen in on the rule entry and exit
     ///  events as well as token matches. This is for quick and dirty debugging.
     /// </summary>
     virtual void setTrace(bool trace);
-    
+
     /**
      * Gets whether a {@link TraceListener} is registered as a parse listener
      * for the parser.
@@ -400,7 +375,31 @@ namespace antlr4 {
      */
     bool isTrace() const;
 
-    tree::ParseTreeTracker& getTreeTracker() { return _tracker; };
+    tree::ParseTreeTracker& getTreeTracker() { return _tracker; }
+
+    /** How to create a token leaf node associated with a parent.
+     *  Typically, the terminal node to create is not a function of the parent
+     *  but this method must still set the parent pointer of the terminal node
+     *  returned. I would prefer having {@link ParserRuleContext#addAnyChild(ParseTree)}
+     *  set the parent pointer, but the parent pointer is implementation dependent
+     *  and currently there is no setParent() in {@link TerminalNode} (and can't
+     *  add method in Java 1.7 without breaking backward compatibility).
+     *
+     * @since 4.7
+     */
+    tree::TerminalNode *createTerminalNode(Token *t);
+
+    /** How to create an error node, given a token, associated with a parent.
+       *  Typically, the error node to create is not a function of the parent
+       *  but this method must still set the parent pointer of the terminal node
+       *  returned. I would prefer having {@link ParserRuleContext#addAnyChild(ParseTree)}
+       *  set the parent pointer, but the parent pointer is implementation dependent
+       *  and currently there is no setParent() in {@link ErrorNode} (and can't
+       *  add method in Java 1.7 without breaking backward compatibility).
+       *
+       * @since 4.7
+       */
+    tree::ErrorNode *createErrorNode(Token *t);
 
   protected:
     /// The ParserRuleContext object for the currently executing rule.
@@ -420,7 +419,7 @@ namespace antlr4 {
     TokenStream *_input;
 
     std::vector<int> _precedenceStack;
-    
+
     /// <summary>
     /// Specifies whether or not the parser should construct a parse tree during
     /// the parsing process. The default value is {@code true}.
@@ -439,10 +438,10 @@ namespace antlr4 {
     /// incremented each time <seealso cref="#notifyErrorListeners"/> is called.
     /// </summary>
     size_t _syntaxErrors;
-    
+
     /** Indicates parser has match()ed EOF token. See {@link #exitRule()}. */
     bool _matchedEOF;
-    
+
     virtual void addContextToParseTree();
 
     // All rule contexts created during a parse run. This is cleared when calling reset().

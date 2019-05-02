@@ -1,32 +1,6 @@
-﻿/*
- * [The "BSD license"]
- *  Copyright (c) 2016 Mike Lischke
- *  Copyright (c) 2013 Terence Parr
- *  Copyright (c) 2013 Dan McLaughlin
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *  1. Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- *  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- *  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- *  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+﻿/* Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+ * Use of this file is governed by the BSD 3-clause license that
+ * can be found in the LICENSE.txt file in the project root.
  */
 
 #include "atn/ATNDeserializationOptions.h"
@@ -34,6 +8,7 @@
 #include "dfa/DFA.h"
 #include "ParserRuleContext.h"
 #include "tree/TerminalNode.h"
+#include "tree/ErrorNodeImpl.h"
 #include "Lexer.h"
 #include "atn/ParserATNSimulator.h"
 #include "misc/IntervalSet.h"
@@ -58,7 +33,10 @@ using namespace antlrcpp;
 
 std::map<std::vector<uint16_t>, atn::ATN> Parser::bypassAltsAtnCache;
 
-Parser::TraceListener::TraceListener(Parser *outerInstance) : outerInstance(outerInstance) {
+Parser::TraceListener::TraceListener(Parser *outerInstance_) : outerInstance(outerInstance_) {
+}
+
+Parser::TraceListener::~TraceListener() {
 }
 
 void Parser::TraceListener::enterEveryRule(ParserRuleContext *ctx) {
@@ -80,6 +58,9 @@ void Parser::TraceListener::exitEveryRule(ParserRuleContext *ctx) {
 }
 
 Parser::TrimToSizeListener Parser::TrimToSizeListener::INSTANCE;
+
+Parser::TrimToSizeListener::~TrimToSizeListener() {
+}
 
 void Parser::TrimToSizeListener::enterEveryRule(ParserRuleContext * /*ctx*/) {
 }
@@ -137,7 +118,7 @@ Token* Parser::match(size_t ttype) {
     if (_buildParseTrees && t->getTokenIndex() == INVALID_INDEX) {
       // we must have conjured up a new token during single token insertion
       // if it's not the current symbol
-      _ctx->addErrorNode(_tracker, t);
+      _ctx->addChild(createErrorNode(t));
     }
   }
   return t;
@@ -153,7 +134,7 @@ Token* Parser::matchWildcard() {
     if (_buildParseTrees && t->getTokenIndex() == INVALID_INDEX) {
       // we must have conjured up a new token during single token insertion
       // if it's not the current symbol
-      _ctx->addErrorNode(_tracker, t);
+      _ctx->addChild(createErrorNode(t));
     }
   }
 
@@ -238,7 +219,7 @@ const atn::ATN& Parser::getATNWithBypassAlts() {
     throw UnsupportedOperationException("The current parser does not support an ATN with bypass alternatives.");
   }
 
-  std::lock_guard<std::recursive_mutex> lck(_mutex);
+  std::lock_guard<std::mutex> lck(_mutex);
 
   // XXX: using the entire serialized ATN as key into the map is a big resource waste.
   //      How large can that thing become?
@@ -319,17 +300,19 @@ Token* Parser::consume() {
   if (o->getType() != EOF) {
     getInputStream()->consume();
   }
+
   bool hasListener = _parseListeners.size() > 0 && !_parseListeners.empty();
   if (_buildParseTrees || hasListener) {
     if (_errHandler->inErrorRecoveryMode(this)) {
-      tree::ErrorNode* node = _ctx->addErrorNode(_tracker, o);
+      tree::ErrorNode *node = createErrorNode(o);
+      _ctx->addChild(node);
       if (_parseListeners.size() > 0) {
         for (auto listener : _parseListeners) {
           listener->visitErrorNode(node);
         }
       }
     } else {
-      tree::TerminalNode *node = _ctx->addChild(_tracker, o);
+      tree::TerminalNode *node = _ctx->addChild(createTerminalNode(o));
       if (_parseListeners.size() > 0) {
         for (auto listener : _parseListeners) {
           listener->visitTerminal(node);
@@ -570,7 +553,7 @@ std::vector<std::string> Parser::getRuleInvocationStack(RuleContext *p) {
 std::vector<std::string> Parser::getDFAStrings() {
   atn::ParserATNSimulator *simulator = getInterpreter<atn::ParserATNSimulator>();
   if (!simulator->decisionToDFA.empty()) {
-    std::lock_guard<std::recursive_mutex> lck(_mutex);
+    std::lock_guard<std::mutex> lck(_mutex);
 
     std::vector<std::string> s;
     for (size_t d = 0; d < simulator->decisionToDFA.size(); d++) {
@@ -585,7 +568,7 @@ std::vector<std::string> Parser::getDFAStrings() {
 void Parser::dumpDFA() {
   atn::ParserATNSimulator *simulator = getInterpreter<atn::ParserATNSimulator>();
   if (!simulator->decisionToDFA.empty()) {
-    std::lock_guard<std::recursive_mutex> lck(_mutex);
+    std::lock_guard<std::mutex> lck(_mutex);
     bool seenOne = false;
     for (size_t d = 0; d < simulator->decisionToDFA.size(); d++) {
       dfa::DFA &dfa = simulator->decisionToDFA[d];
@@ -641,6 +624,14 @@ void Parser::setTrace(bool trace) {
 
 bool Parser::isTrace() const {
   return _tracer != nullptr;
+}
+
+tree::TerminalNode *Parser::createTerminalNode(Token *t) {
+  return _tracker.createInstance<tree::TerminalNodeImpl>(t);
+}
+
+tree::ErrorNode *Parser::createErrorNode(Token *t) {
+  return _tracker.createInstance<tree::ErrorNodeImpl>(t);
 }
 
 void Parser::InitializeInstanceFields() {

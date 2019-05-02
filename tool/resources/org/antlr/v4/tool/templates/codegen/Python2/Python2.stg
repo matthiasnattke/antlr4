@@ -1,7 +1,7 @@
 /*
  * [The "BSD license"]
- *  Copyright (c) 2012 Terence Parr
- *  Copyright (c) 2012 Sam Harwell
+ *  Copyright (c) 2012-2016 Terence Parr
+ *  Copyright (c) 2012-2016 Sam Harwell
  *  Copyright (c) 2014 Eric Vergnaud
  *  All rights reserved.
  *
@@ -52,6 +52,7 @@ ParserFile(file, parser, namedActions, contextSuperClass) ::= <<
 from __future__ import print_function
 from antlr4 import *
 from io import StringIO
+import sys
 
 <namedActions.header>
 <parser>
@@ -109,7 +110,10 @@ Parser(parser, funcs, atn, sempredFuncs, superClass) ::= <<
 
 Parser_(parser, funcs, atn, sempredFuncs, ctor, superClass) ::= <<
 <if(superClass)>
-from .<superClass> import <superClass>
+if __name__ is not None and "." in __name__:
+    from .<superClass> import <superClass>
+else:
+    from <superClass> import <superClass>
 
 <endif>
 <atn>
@@ -166,16 +170,16 @@ class <parser.name> ( <if(superClass)><superClass><else>Parser<endif> ):
 dumpActions(recog, argFuncs, actionFuncs, sempredFuncs) ::= <<
 <if(actionFuncs)>
 def action(self, localctx, ruleIndex, actionIndex):
-	if self._actions is None:
-		actions = dict()
+    if self._actions is None:
+        actions = dict()
 <recog.actionFuncs.values:{f|
-		actions[<f.ruleIndex>] = self.<f.name>_action }; separator="\n">
-		self._actions = actions
-	action = self._actions.get(ruleIndex, None)
-	if action is not None:
-		action(localctx, actionIndex)
-	else:
-		raise Exception("No registered action for:" + str(ruleIndex))
+        actions[<f.ruleIndex>] = self.<f.name>_action }; separator="\n">
+        self._actions = actions
+    action = self._actions.get(ruleIndex, None)
+    if action is not None:
+        action(localctx, actionIndex)
+    else:
+        raise Exception("No registered action for:" + str(ruleIndex))
 
 <actionFuncs.values; separator="\n">
 
@@ -198,8 +202,8 @@ def sempred(self, localctx, ruleIndex, predIndex):
 >>
 
 parser_ctor(p) ::= <<
-def __init__(self, input):
-    super(<parser.name>, self).__init__(input)
+def __init__(self, input, output=sys.stdout):
+    super(<parser.name>, self).__init__(input, output=output)
     self.checkVersion("<file.ANTLRVersion>")
     self._interp = ParserATNSimulator(self, self.atn, self.decisionsToDFA, self.sharedContextCache)
     self._predicates = None
@@ -334,7 +338,7 @@ token = self._input.LA(1)
     <alt>
     pass}; separator="\nel">
 else:
-    <error>
+    pass
 >>
 
 LL1OptionalBlockSingleAlt(choice, expr, alts, preamble, error, followExpr) ::= <<
@@ -493,6 +497,7 @@ self.state = <m.stateNumber>
 <if(invert)>if <m.varName> \<= 0 or <expr><else>if not(<expr>)<endif>:
 <if(m.labels)><m.labels:{l |     <labelref(l)> = }><else>    <endif>self._errHandler.recoverInline(self)
 else:
+    self._errHandler.reportMatch(self)
     self.consume()
 >>
 
@@ -516,7 +521,7 @@ if not <chunks>:
 
 ExceptionClause(e, catchArg, catchAction) ::= <<
 catch (<catchArg>) {
-	<catchAction>
+    <catchAction>
 }
 >>
 
@@ -556,13 +561,13 @@ TokenPropertyRef_int(t) ::= "(0 if <ctx(t)>.<t.label> is None else int(<ctx(t)>.
 
 RulePropertyRef_start(r) ::= "(None if <ctx(r)>.<r.label> is None else <ctx(r)>.<r.label>.start)"
 RulePropertyRef_stop(r)	 ::= "(None if <ctx(r)>.<r.label> is None else <ctx(r)>.<r.label>.stop)"
-RulePropertyRef_text(r)	 ::= "(None if <ctx(r)>.<r.label> is None else self._input.getText((<ctx(r)>.<r.label>.start,<ctx(r)>.<r.label>.stop)))"
+RulePropertyRef_text(r)	 ::= "(None if <ctx(r)>.<r.label> is None else self._input.getText(<ctx(r)>.<r.label>.start,<ctx(r)>.<r.label>.stop))"
 RulePropertyRef_ctx(r)	 ::= "<ctx(r)>.<r.label>"
 RulePropertyRef_parser(r)	 ::= "self"
 
 ThisRulePropertyRef_start(r) ::= "localctx.start"
 ThisRulePropertyRef_stop(r)	 ::= "localctx.stop"
-ThisRulePropertyRef_text(r)	 ::= "self._input.getText((localctx.start, self._input.LT(-1)))"
+ThisRulePropertyRef_text(r)	 ::= "self._input.getText(localctx.start, self._input.LT(-1))"
 ThisRulePropertyRef_ctx(r)	 ::= "localctx"
 ThisRulePropertyRef_parser(r)	 ::= "self"
 
@@ -621,7 +626,7 @@ def <r.name>(self, i=None):
 LexerRuleContext() ::= "RuleContext"
 
 /** The rule context name is the rule followed by a suffix; e.g.,
- *	r becomes rContext.
+ *  r becomes rContext.
  */
 RuleContextNameSuffix() ::= "Context"
 
@@ -739,6 +744,7 @@ LexerFile(lexerFile, lexer, namedActions) ::= <<
 from __future__ import print_function
 from antlr4 import *
 from io import StringIO
+import sys
 
 <namedActions.header>
 
@@ -746,6 +752,13 @@ from io import StringIO
 >>
 
 Lexer(lexer, atn, actionFuncs, sempredFuncs, superClass) ::= <<
+<if(superClass)>
+if __name__ is not None and "." in __name__:
+    from .<superClass> import <superClass>
+else:
+    from <superClass> import <superClass>
+
+<endif>
 
 <atn>
 
@@ -755,9 +768,17 @@ class <lexer.name>(<if(superClass)><superClass><else>Lexer<endif>):
 
     decisionsToDFA = [ DFA(ds, i) for i, ds in enumerate(atn.decisionToState) ]
 
+<if(lexer.channels)>
+    <lexer.channels:{c| <c> = <lexer.channels.(c)>}; separator="\n">
+
+<endif>
+<if(rest(lexer.modes))>
     <rest(lexer.modes):{m| <m> = <i>}; separator="\n">
 
+<endif>
     <lexer.tokens:{k | <k> = <lexer.tokens.(k)>}; separator="\n", wrap, anchor>
+
+    channelNames = [ u"DEFAULT_TOKEN_CHANNEL", u"HIDDEN"<if (lexer.channels)>, <lexer.channels:{c| u"<c>"}; separator=", ", wrap, anchor><endif> ]
 
     modeNames = [ <lexer.modes:{m| u"<m>"}; separator=", ", wrap, anchor> ]
 
@@ -771,8 +792,8 @@ class <lexer.name>(<if(superClass)><superClass><else>Lexer<endif>):
 
     grammarFileName = u"<lexer.grammarFileName>"
 
-    def __init__(self, input=None):
-        super(<lexer.name>, self).__init__(input)
+    def __init__(self, input=None, output=sys.stdout):
+        super(<lexer.name>, self).__init__(input, output=output)
         self.checkVersion("<lexerFile.ANTLRVersion>")
         self._interp = LexerATNSimulator(self, self.atn, self.decisionsToDFA, PredictionContextCache())
         self._actions = None
@@ -795,10 +816,10 @@ def serializedATN():
 >>
 
 /** Using a type to init value map, try to init a type; if not in table
- *	must be an object, default value is "null".
+ *  must be an object, default value is "null".
  */
 initValue(typeName) ::= <<
-<javaTypeInitMap.(typeName)>
+<pythonTypeInitMap.(typeName)>
 >>
 
 codeFileExtension() ::= ".py"

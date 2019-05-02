@@ -1,47 +1,23 @@
-﻿/*
- * [The "BSD license"]
- *  Copyright (c) 2016 Mike Lischke
- *  Copyright (c) 2013 Terence Parr
- *  Copyright (c) 2013 Dan McLaughlin
- *  All rights reserved.
- *
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions
- *  are met:
- *
- *  1. Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *  2. Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products
- *     derived from this software without specific prior written permission.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- *  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- *  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- *  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+﻿/* Copyright (c) 2012-2017 The ANTLR Project. All rights reserved.
+ * Use of this file is governed by the BSD 3-clause license that
+ * can be found in the LICENSE.txt file in the project root.
  */
 
 #pragma once
 
 #include "ProxyErrorListener.h"
-#include "IRecognizer.h"
 
 namespace antlr4 {
 
-  class ANTLR4CPP_PUBLIC Recognizer : public IRecognizer {
+  class ANTLR4CPP_PUBLIC Recognizer {
   public:
-    static const size_t EOF = (size_t)-1;
+    static const size_t EOF = static_cast<size_t>(-1); // std::numeric_limits<size_t>::max(); doesn't work in VS 2013.
 
     Recognizer();
-    virtual ~Recognizer() {};
+    Recognizer(Recognizer const&) = delete;
+    virtual ~Recognizer();
+
+    Recognizer& operator=(Recognizer const&) = delete;
 
     /** Used to print out token names like ID during debugging and
      *  error reporting.  The generated parsers implement a method
@@ -107,7 +83,7 @@ namespace antlr4 {
      * prediction.
      */
     void setInterpreter(atn::ATNSimulator *interpreter);
-    
+
     /// What is the error header, normally line/character position information?
     virtual std::string getErrorHeader(RecognitionException *e);
 
@@ -143,7 +119,10 @@ namespace antlr4 {
 
     virtual void action(RuleContext *localctx, size_t ruleIndex, size_t actionIndex);
 
-    virtual size_t getState() const override;
+    virtual size_t getState() const ;
+
+    // Get the ATN used by the recognizer for prediction.
+    virtual const atn::ATN& getATN() const = 0;
 
     /// <summary>
     /// Indicate that the recognizer has changed internal state that is
@@ -168,7 +147,7 @@ namespace antlr4 {
     atn::ATNSimulator *_interpreter; // Set and deleted in descendants (or the profiler).
 
     // Mutex to manage synchronized access for multithreading.
-    std::recursive_mutex _mutex;
+    std::mutex _mutex;
 
   private:
     static std::map<const dfa::Vocabulary*, std::map<std::string, size_t>> _tokenTypeMapCache;
@@ -177,7 +156,7 @@ namespace antlr4 {
     ProxyErrorListener _proxListener; // Manages a collection of listeners.
 
     size_t _stateNumber;
-    
+
     void InitializeInstanceFields();
 
   };
